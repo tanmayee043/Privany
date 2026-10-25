@@ -52,7 +52,7 @@ export function CookieTable({ report }: { report: Report }) {
     if (!audit) return [];
     const map = new Map<string, { name: string; domain: string; owner: string; category: CookieCategory; thirdParty: boolean; baseline: number; gpc: number; consent?: string }>();
     for (const run of audit.runs) {
-      if (!run.ok) continue;
+      if (!run.ok || (run.config !== "baseline" && run.config !== "gpc")) continue;
       for (const c of run.cookies) {
         const key = `${c.name}@${c.domain}`;
         const row = map.get(key) ?? { name: c.name, domain: c.domain, owner: c.platform ?? c.domain, category: c.category, thirdParty: c.thirdParty, baseline: 0, gpc: 0 };
@@ -155,7 +155,13 @@ export function HowTested({ report }: { report: Report }) {
     const hosts = a.summary.baseline?.stableHosts;
     if (hosts) facts.push(["Outside domains contacted", hosts.length ? `${hosts.length} on every default visit, including content delivery networks: ${hosts.slice(0, 12).join(", ")}${hosts.length > 12 ? "…" : ""}` : "None"]);
     facts.push(["GPC signal", "Sec-GPC: 1 header and navigator.globalPrivacyControl, as in PrivAudit (ACM CCS 2026)"]);
-    facts.push(["Consent banner", a.consentBanner.detected ? `Shown${a.consentBanner.vendor ? ` (${a.consentBanner.vendor})` : ""}; we didn't click it` : "None detected"]);
+    const reject = a.runs.find((r) => r.config === "reject_all")?.consent;
+    facts.push([
+      "Consent banner",
+      a.consentBanner.detected
+        ? `Shown${a.consentBanner.vendor ? ` (${a.consentBanner.vendor})` : ""}; the default and GPC visits didn't click it${reject ? (reject.clicked ? `, and separate visits clicked "${reject.button}" and Accept All` : ", and we couldn't find its Reject All button") : ""}`
+        : "None detected",
+    ]);
     facts.push(["gpc.json", a.gpcJson.found ? (a.gpcJson.gpc ? "Published, declares GPC support" : "Published, doesn't declare support") : "Not published"]);
     if (a.homepageLinks.optOut.length) facts.push(["Opt-out links on homepage", a.homepageLinks.optOut.map((o) => o.text).join(", ")]);
   }

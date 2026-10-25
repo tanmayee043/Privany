@@ -102,6 +102,18 @@ const CLAIM_RULES: Record<ClaimKey, ClaimRule> = {
       unspecified: "The policy doesn't clearly say whether third parties track on the site.",
     },
   },
+  uses_data_for_ai_training: {
+    topic: /artificial intelligence|\bAI\b|machine[- ]learning|large language model|\bLLMs?\b|\balgorithms?\b|\bgenerative\b|\b(?:our|the|its|their|these|such)\s+(?:\w+\s+)?models?\b/i,
+    // Only sentences that talk about training count (see decideClaim), so this just says "training happens".
+    yes: /\b(?:train\w*|fine-?tun\w*|improv\w*|develop\w*)\b/i,
+    // Sentences here are already about AI and training, so a negation anywhere before the training verb counts ("do not collect, use, or sell ... for the purpose of training").
+    no: new RegExp(String.raw`${NEG}[^.]{0,100}\b(?:train\w*|fine-?tun\w*)\b|\bnot\s+(?:be\s+)?used\s+(?:\w+\s+){0,4}?(?:to|for)\s+(?:train|improv|develop)|\bnever\s+(?:be\s+)?used\s+(?:\w+\s+){0,4}?(?:to|for)\s+(?:train|improv|develop)`, "i"),
+    summary: {
+      yes: "The policy says your data or content may be used to train or improve AI or machine-learning models.",
+      no: "The policy says your data or content is not used to train AI or machine-learning models.",
+      unspecified: "The policy doesn't clearly say whether your data is used to train AI.",
+    },
+  },
   tracking_requires_consent: {
     topic: /\bconsent\b/i,
     yes: /(?:with|obtain|ask for|request|seek|only (?:with|after)|upon|based on) (?:your )?(?:prior |explicit )?consent[^.]{0,80}(?:cookie|tracking|non[- ]essential|analytic|advertis)|(?:cookie|tracking|non[- ]essential|analytic|advertis)[^.]{0,80}(?:with|obtain|ask for|request|seek|only (?:with|after)|upon) (?:your )?(?:prior |explicit )?consent/i,
@@ -117,6 +129,8 @@ const CLAIM_RULES: Record<ClaimKey, ClaimRule> = {
 // A sentence counts toward the cookie/consent claim only if it is about cookies or tracking.
 const CONSENT_CONTEXT = /cookie|tracking|track|non[- ]essential|pixel|analytic|advertis/i;
 
+const AI_TRAINING_CONTEXT = /\b(?:train\w*|fine-?tun\w*|improv\w*|develop\w*)\b[^.]{0,80}\b(?:models?|AI|artificial intelligence|machine[- ]learning|algorithms?|LLMs?)\b|\b(?:models?|AI|machine[- ]learning|algorithms?|LLMs?)\b[^.]{0,60}\b(?:train\w*|fine-?tun\w*)\b/i;
+
 // "Sale" in the sense of a merger or asset sale isn't selling your data.
 const CORPORATE_SALE = /sale of (?:(?:all|some|part|substantially all) of )?(?:our |the )?(?:company|business|assets|stock)|merger|acquisition|bankruptcy|business transaction|reorgani[sz]ation/i;
 
@@ -125,6 +139,8 @@ function decideClaim(key: ClaimKey, all: Sentence[]): PolicyClaim {
   let relevant = all.filter((s) => rule.topic.test(s.text));
   if (key === "sells_personal_info") relevant = relevant.filter((s) => !CORPORATE_SALE.test(s.text));
   if (key === "tracking_requires_consent") relevant = relevant.filter((s) => CONSENT_CONTEXT.test(s.text));
+  // AI features alone aren't a training claim; the sentence has to talk about training or improving models.
+  if (key === "uses_data_for_ai_training") relevant = relevant.filter((s) => AI_TRAINING_CONTEXT.test(s.text));
   if (key === "uses_third_party_trackers") relevant = relevant.filter((s) => rule.yes.test(s.text) || rule.no.test(s.text));
   // Negations win over affirmations in the same sentence ("we do not sell…").
   const noHits = relevant.filter((s) => rule.no.test(s.text));
@@ -132,7 +148,7 @@ function decideClaim(key: ClaimKey, all: Sentence[]): PolicyClaim {
   let value: ClaimValue = "unspecified";
   let quotes: Quote[] = [];
   let summary = rule.summary.unspecified;
-  if (noHits.length && yesHits.length && (key === "honors_gpc" || key === "sells_personal_info" || key === "shares_for_targeted_ads")) {
+  if (noHits.length && yesHits.length && (key === "honors_gpc" || key === "sells_personal_info" || key === "shares_for_targeted_ads" || key === "uses_data_for_ai_training")) {
     // Conflicting statements: report both rather than pick one.
     quotes = [quote(noHits[0]), quote(yesHits[0])];
     summary = `${rule.summary.unspecified} It contains statements in both directions; read both quotes.`;

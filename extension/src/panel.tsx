@@ -7,6 +7,7 @@ import { api, type JobStatus, type Report } from "../../web/src/api";
 import { FactsPanel } from "../../web/src/components/FactsPanel";
 import { Evidence } from "../../web/src/components/Evidence";
 import { NextSteps, PrioritiesForm } from "../../web/src/components/Personal";
+import { NoGoSection, NoGoSetup, useNoGos } from "../../web/src/components/NoGos";
 import { CookieTable, HowTested, Topics } from "../../web/src/components/Details";
 import { loadPriorities, rankComparisons, savePriorities, type Priorities } from "../../web/src/priorities";
 import { siteName } from "../../web/src/words";
@@ -92,7 +93,10 @@ function Panel() {
       </header>
       <main className="flex-1 p-3">
         {state === undefined ? null : state === null ? (
-          <Idle />
+          <div className="grid gap-3">
+            <FirstUseNoGos />
+            <Idle />
+          </div>
         ) : state.phase === "error" ? (
           <Message title={state.offline ? "Privany's server isn't running" : "Couldn't check this page"} body={state.error} />
         ) : error ? (
@@ -100,14 +104,30 @@ function Panel() {
         ) : report ? (
           <ReportView report={report} />
         ) : (
-          <Progress job={job} reading={state.phase === "reading"} site={site} />
+          <div className="grid gap-3">
+            <FirstUseNoGos />
+            <Progress job={job} reading={state.phase === "reading"} site={site} />
+          </div>
         )}
       </main>
     </div>
   );
 }
 
+/** First use: ask for no-goes before the first result, so the report can lead with them. */
+function FirstUseNoGos() {
+  const [prefs, setPrefs] = useNoGos();
+  const [dismissed, setDismissed] = useState(false);
+  if (!prefs || prefs.selected.length || dismissed) return null;
+  return <NoGoSetup value={prefs} onChange={setPrefs} onDone={() => setDismissed(true)} doneLabel="Save and continue" />;
+}
+
 function Idle() {
+  const [prefs, setPrefs] = useNoGos();
+  const [editing, setEditing] = useState(false);
+  if (prefs && editing) {
+    return <NoGoSetup value={prefs} onChange={setPrefs} onDone={() => setEditing(false)} />;
+  }
   return (
     <section className="border-2 border-ink bg-paper px-4 pb-4 pt-3">
       <h1 className="font-label text-[34px] font-bold leading-none">Privacy Facts</h1>
@@ -115,6 +135,14 @@ function Idle() {
       <button type="button" onClick={recheck} className="mt-4 w-full bg-ink px-4 py-2.5 text-[15px] font-bold text-white hover:bg-[#2b2b2b]">
         Check this page
       </button>
+      {prefs && (
+        <p className="mt-3 text-[13px] text-ink-2">
+          {prefs.selected.length ? `${prefs.selected.length} no-go${prefs.selected.length === 1 ? "" : "es"} set. ` : ""}
+          <button type="button" onClick={() => setEditing(true)} className="font-semibold text-evidence underline">
+            {prefs.selected.length ? "Edit my no-goes" : "Set up my no-goes"}
+          </button>
+        </p>
+      )}
       <p className="mt-2 text-[12px] text-ink-3">If nothing happens, click the Privany icon in the toolbar while this tab is open.</p>
     </section>
   );
@@ -163,7 +191,8 @@ function ReportView({ report }: { report: Report }) {
   const ranked = useMemo(() => rankComparisons(report.comparisons, priorities), [report, priorities]);
   const current = ranked.find((c) => c.key === selected) ?? ranked[0];
   return (
-    <div className="grid gap-3">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-3">
+      <NoGoSection report={report} />
       <FactsPanel
         report={report}
         ranked={ranked}

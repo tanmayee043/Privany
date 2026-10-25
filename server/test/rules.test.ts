@@ -80,4 +80,46 @@ describe("page text from the extension", () => {
   it("returns nothing for a nearly empty page", () => {
     expect(tryPolicyFromBlocks([{ kind: "text", text: "Loading…" }], {})).toBeUndefined();
   });
+
+  describe("AI training claim", () => {
+    it("reads training on user content as yes", () => {
+      const { claim } = read("We may use your content and usage data to train and improve our machine learning models.");
+      expect(claim("uses_data_for_ai_training").value).toBe("yes");
+      expect(claim("uses_data_for_ai_training").quotes[0].text).toContain("train and improve our machine learning models");
+    });
+
+    it("reads an explicit negation as no", () => {
+      const { claim } = read("We do not use your content to train our AI models.");
+      expect(claim("uses_data_for_ai_training").value).toBe("no");
+    });
+
+    it("reads a passive negation as no", () => {
+      const { claim } = read("Your personal data will never be used to train artificial intelligence systems.");
+      expect(claim("uses_data_for_ai_training").value).toBe("no");
+    });
+
+    it("reports conflicting statements instead of picking one", () => {
+      const { claim } = read(
+        "We may train and improve our artificial intelligence and machine learning models and algorithms.\n\nWe use artificial intelligence tools, including large language models, but we do not collect, use, or sell Personal Information for the purpose of training large language models.",
+      );
+      expect(claim("uses_data_for_ai_training").value).toBe("unspecified");
+      expect(claim("uses_data_for_ai_training").quotes).toHaveLength(2);
+    });
+
+    it("reads a negation with a comma-separated list of verbs", () => {
+      const { claim } = read("We do not collect, use, or sell your content for the purpose of training large language models.");
+      expect(claim("uses_data_for_ai_training").value).toBe("no");
+    });
+
+    it("leaves AI features without training unspecified", () => {
+      const { claim } = read("Our assistant is an AI feature that can summarize pages for you when you ask it to.");
+      expect(claim("uses_data_for_ai_training").value).toBe("unspecified");
+    });
+
+    it("is unspecified when AI isn't mentioned", () => {
+      const { claim } = read("We collect your email address when you create an account.");
+      expect(claim("uses_data_for_ai_training").value).toBe("unspecified");
+      expect(claim("uses_data_for_ai_training").quotes).toHaveLength(0);
+    });
+  });
 });

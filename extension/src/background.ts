@@ -16,7 +16,8 @@ chrome.action.onClicked.addListener((tab) => {
 });
 
 chrome.runtime.onMessage.addListener((msg: { type?: string; tabId?: number }) => {
-  if (msg.type === "privany:recheck" && typeof msg.tabId === "number") void startCheck(msg.tabId);
+  // "Check again" skips the server's cache of recent results.
+  if (msg.type === "privany:recheck" && typeof msg.tabId === "number") void startCheck(msg.tabId, { fresh: true });
 });
 
 // Moving the tab to a different site clears its result; reloads and in-site
@@ -37,7 +38,7 @@ async function setState(tabId: number, state: TabState) {
   await chrome.storage.session.set({ [key(tabId)]: state });
 }
 
-async function startCheck(tabId: number) {
+async function startCheck(tabId: number, opts: { fresh?: boolean } = {}) {
   let tab: chrome.tabs.Tab;
   try {
     tab = await chrome.tabs.get(tabId);
@@ -70,7 +71,7 @@ async function startCheck(tabId: number) {
       method: "POST",
       headers: { "content-type": "application/json" },
       // The homepage is what gets tested; the open page supplies the policy text.
-      body: JSON.stringify({ url: site.origin, page }),
+      body: JSON.stringify({ url: site.origin, page, fresh: opts.fresh === true }),
     });
     const body = (await res.json().catch(() => ({}))) as { id?: string; error?: string };
     if (!res.ok || !body.id) throw new Error(body.error ?? `The Privany server answered ${res.status}.`);

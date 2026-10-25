@@ -84,7 +84,7 @@ export function FactsPanel({ report, ranked, selected, onSelect }: { report: Rep
 
       <p className="rule-div mt-0.5 pt-2 text-[12px] leading-snug text-ink-2">
         {policy && `${policy.evidence.verified} of ${policy.evidence.proposed} quotes found word for word in the policy; the rest were discarded. `}
-        {(report.audit?.runs[0]?.pagesVisited?.length ?? 1) > 1 ? "Homepage and one inner page, scrolled, no clicks." : "Homepage only, no clicks."} A possible gap is a reason to look closer, not proof of wrongdoing.
+        {(report.audit?.runs[0]?.pagesVisited?.length ?? 1) > 1 ? "Homepage and one inner page, scrolled, no clicks on the page." : "Homepage only, no clicks."} A possible gap is a reason to look closer, not proof of wrongdoing.
       </p>
     </section>
   );

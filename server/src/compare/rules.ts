@@ -9,8 +9,8 @@ import { isTracking } from "../audit/cookies.js";
 // same verdict.
 
 const COMMON_CAVEATS = [
-  "Cookies are only one way to track. Fingerprinting, server-side sharing and tracking pixels without cookies aren't measured.",
-  "We visited the homepage and one other page, scrolling through each, but didn't log in or click anything. Clicking can load more ads and trackers, so real numbers may be higher.",
+  "Cookies are only one way to track. Fingerprinting and server-side sharing aren't measured; outside domains contacted are listed under How we tested.",
+  "We visited the homepage and one other page, scrolling through each, but didn't log in or click anything on the page (apart from the separate cookie-banner test). Clicking can load more ads and trackers, so real numbers may be higher.",
 ];
 
 const GPC_CAVEATS = [
@@ -30,7 +30,7 @@ function base(claim: PolicyClaim, audit: BrowserAudit | undefined) {
     key: claim.key,
     title: CLAIMS[claim.key].title,
     claim,
-    observed: audit ? { baseline: audit.summary.baseline, gpc: audit.summary.gpc } : undefined,
+    observed: audit ? { baseline: audit.summary.baseline, gpc: audit.summary.gpc, rejectAll: audit.summary.reject_all, acceptAll: audit.summary.accept_all } : undefined,
   };
 }
 
@@ -98,15 +98,25 @@ function compareConsent(claim: PolicyClaim, audit: BrowserAudit | undefined): Co
   const b = audit?.summary.baseline;
   if (!audit || !b) return inconclusive(claim, audit, "The default visit didn't complete.");
   const tracking = b.stableCookies.filter(isTracking);
-  const banner = audit.consentBanner.detected ? `A consent banner${audit.consentBanner.vendor ? ` (${audit.consentBanner.vendor})` : ""} was shown, and we didn't click anything.` : "We didn't detect a consent banner.";
+  const banner = audit.consentBanner.detected ? `A consent banner${audit.consentBanner.vendor ? ` (${audit.consentBanner.vendor})` : ""} was shown; the default visits didn't click it.` : "We didn't detect a consent banner.";
+  const rejectRun = audit.runs.find((r) => r.config === "reject_all");
+  const rejected = audit.summary.reject_all;
+  const afterReject = rejected?.stableCookies.filter(isTracking) ?? [];
+  const rejectNote = !rejectRun
+    ? ""
+    : !rejected
+      ? " We didn't find a one-click Reject All button on the banner's first screen (refusing may take extra steps, or our button matching missed it), so what happens after refusing wasn't tested."
+      : afterReject.length
+        ? ` After clicking "${rejectRun.consent?.button}", ${plural(afterReject.length, "tracking cookie")} (${list(afterReject)}) were still written.`
+        : ` After clicking "${rejectRun.consent?.button}", no tracking cookies were written.`;
   const caveats = ["Consent rules differ by region: many US sites track by default and ask for consent only in Europe. This test ran from the server's location.", ...COMMON_CAVEATS];
   if (claim.value === "yes") {
     if (tracking.length > 0) {
-      return { ...base(claim, audit), verdict: "possible_gap", headline: `${plural(tracking.length, "tracking cookie")} before any consent`, explanation: `The policy says non-essential cookies wait for consent. ${banner} Every visit still wrote ${plural(tracking.length, "analytics or advertising cookie")}, from ${list(tracking)}.`, observed: { baseline: b, cookies: tracking }, caveats };
+      return { ...base(claim, audit), verdict: "possible_gap", headline: `${plural(tracking.length, "tracking cookie")} before any consent`, explanation: `The policy says non-essential cookies wait for consent. ${banner} Every visit still wrote ${plural(tracking.length, "analytics or advertising cookie")}, from ${list(tracking)}.${rejectNote}`, observed: { baseline: b, cookies: tracking }, caveats };
     }
-    return { ...base(claim, audit), verdict: "consistent", headline: "No tracking cookies before consent", explanation: `The policy says non-essential cookies wait for consent. ${banner} No analytics or advertising cookie was written on every visit.`, observed: { baseline: b, cookies: [] }, caveats };
+    return { ...base(claim, audit), verdict: "consistent", headline: "No tracking cookies before consent", explanation: `The policy says non-essential cookies wait for consent. ${banner} No analytics or advertising cookie was written on every visit.${rejectNote}`, observed: { baseline: b, cookies: [] }, caveats };
   }
-  return { ...base(claim, audit), verdict: "not_stated", headline: claim.value === "no" ? "The policy says tracking starts by default" : "The policy doesn't say tracking waits for consent", explanation: `${banner} Every visit wrote ${plural(tracking.length, "analytics or advertising cookie")} before any choice was made.`, observed: { baseline: b, cookies: tracking }, caveats };
+  return { ...base(claim, audit), verdict: "not_stated", headline: claim.value === "no" ? "The policy says tracking starts by default" : "The policy doesn't say tracking waits for consent", explanation: `${banner} Every visit wrote ${plural(tracking.length, "analytics or advertising cookie")} before any choice was made.${rejectNote}`, observed: { baseline: b, cookies: tracking }, caveats };
 }
 
 function compareSaleOrSharing(claim: PolicyClaim, audit: BrowserAudit | undefined): Comparison {
@@ -131,6 +141,16 @@ function compareDnt(claim: PolicyClaim, audit: BrowserAudit | undefined): Compar
   return { ...base(claim, audit), verdict: claim.value === "unspecified" ? "not_stated" : "not_testable", headline: claim.value === "yes" ? "The policy says it respects Do Not Track" : claim.value === "no" ? "The policy says it ignores Do Not Track" : "The policy doesn't mention Do Not Track", explanation: "This audit doesn't send the Do Not Track signal, so the claim wasn't tested.", caveats: [] };
 }
 
+function compareAiTraining(claim: PolicyClaim, audit: BrowserAudit | undefined): Comparison {
+  return {
+    ...base(claim, audit),
+    verdict: claim.value === "unspecified" ? "not_stated" : "not_testable",
+    headline: claim.value === "yes" ? "The policy says your data may train AI" : claim.value === "no" ? "The policy says your data isn't used to train AI" : "The policy doesn't say whether your data trains AI",
+    explanation: "A browser can't see how a company uses data once it has it, so this claim wasn't tested. It rests on the policy's own words.",
+    caveats: [],
+  };
+}
+
 const RULES: Record<ClaimKey, (c: PolicyClaim, a: BrowserAudit | undefined) => Comparison> = {
   honors_gpc: compareGpc,
   uses_third_party_trackers: compareThirdPartyTracking,
@@ -138,6 +158,7 @@ const RULES: Record<ClaimKey, (c: PolicyClaim, a: BrowserAudit | undefined) => C
   shares_for_targeted_ads: compareSaleOrSharing,
   sells_personal_info: compareSaleOrSharing,
   respects_dnt: compareDnt,
+  uses_data_for_ai_training: compareAiTraining,
 };
 
 const ORDER: Verdict[] = ["possible_gap", "consistent", "not_stated", "not_testable", "inconclusive"];

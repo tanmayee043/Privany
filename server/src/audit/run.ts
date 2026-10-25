@@ -1,7 +1,9 @@
 import type { Page } from "puppeteer";
 import type { AuditConfigKey, AuditRun, BrowserAudit, ConfigSummary, CookieTotals } from "../report/types.js";
+import { isTransientNavError } from "../limits.js";
 import { safeFetchText } from "../safety/url.js";
 import { getBrowser, preparePage } from "./browser.js";
+import { clickConsent, type ConsentChoice } from "./consent.js";
 import { classifyCookie, registrableDomain, totals } from "./cookies.js";
 
 // The measurement follows PrivAudit's crawler (crawler/scripts/cookie_profile_test.js):
@@ -16,6 +18,12 @@ const CONFIGS: { key: AuditConfigKey; label: string; gpc: boolean }[] = [
   { key: "baseline", label: "Default browser, no privacy signal", gpc: false },
   { key: "gpc", label: "Global Privacy Control on", gpc: true },
 ];
+// Run once each, and only on sites where a consent banner was detected.
+const CONSENT_CONFIGS: { key: AuditConfigKey; label: string; gpc: false; consent: ConsentChoice }[] = [
+  { key: "reject_all", label: "Clicked Reject All on the consent banner", gpc: false, consent: "reject" },
+  { key: "accept_all", label: "Clicked Accept All on the consent banner", gpc: false, consent: "accept" },
+];
+type Config = { key: AuditConfigKey; label: string; gpc: boolean; consent?: ConsentChoice };
 
 // Ad-heavy pages rarely go quiet; after this long we keep what has loaded and mark the run partial.
 const NAV_TIMEOUT_MS = 25_000;
@@ -87,9 +95,17 @@ async function discoverOnPage(page: Page): Promise<Discovery> {
   });
 }
 
+/** One visit, retried once when it fails for a reason that looks like a network blip. */
+async function runConfigWithRetry(site: URL, cfg: Config, repeat: number, wantDiscovery: boolean, innerUrl: string | undefined) {
+  const first = await runConfig(site, cfg, repeat, wantDiscovery, innerUrl);
+  if (first.run.ok || !first.run.error || !isTransientNavError(first.run.error)) return first;
+  await new Promise((r) => setTimeout(r, 2_000));
+  return runConfig(site, cfg, repeat, wantDiscovery, innerUrl);
+}
+
 async function runConfig(
   site: URL,
-  cfg: (typeof CONFIGS)[number],
+  cfg: Config,
   repeat: number,
   wantDiscovery: boolean,
   innerUrl: string | undefined,
@@ -99,8 +115,8 @@ async function runConfig(
   const started = Date.now();
   const hosts = new Set<string>();
   const siteDomain = registrableDomain(site.hostname);
-  // Nothing is clicked, but a page can still try to open windows on its own;
-  // close any it opens so they can't run further code.
+  // Only consent-banner buttons are ever clicked, but a page can still try to open
+  // windows on its own; close any it opens so they can't run further code.
   context.on("targetcreated", (t) => {
     if (t.type() === "page" && t.opener()) void t.page().then((p) => p?.close()).catch(() => {});
   });
@@ -118,6 +134,12 @@ async function runConfig(
     }
     let partial = !(await load(page, site.toString()));
     await new Promise((r) => setTimeout(r, SETTLE_MS));
+    let consent: AuditRun["consent"];
+    if (cfg.consent) {
+      consent = await clickConsent(page, cfg.consent);
+      // Cookies written in response to the choice need time to land.
+      if (consent.clicked) await new Promise((r) => setTimeout(r, SETTLE_MS));
+    }
     const finalUrl = page.url();
     const discovery = wantDiscovery ? await discoverOnPage(page).catch(() => undefined) : undefined;
     await scrollThrough(page);
@@ -136,7 +158,7 @@ async function runConfig(
     const raw = await context.cookies();
     const cookies = raw.map((c) => classifyCookie({ name: c.name, value: c.value, domain: c.domain, expires: c.expires, session: c.session }, new URL(finalUrl).hostname));
     return {
-      run: { config: cfg.key, repeat, label: cfg.label, ok: true, finalUrl, partial, pagesVisited, durationMs: Date.now() - started, cookies, thirdPartyHosts: [...hosts].sort() },
+      run: { config: cfg.key, repeat, label: cfg.label, consent, ok: true, finalUrl, partial, pagesVisited, durationMs: Date.now() - started, cookies, thirdPartyHosts: [...hosts].sort() },
       discovery,
       inner,
     };
@@ -254,7 +276,7 @@ export async function runBrowserAudit(site: URL, hooks: AuditHooks = {}): Promis
   // the first round's default visit so every visit loads the same pages.
   for (let repeat = 1; repeat <= REPEATS; repeat++) {
     hooks.onProgress?.(`Visit ${repeat} of ${REPEATS}, with and without GPC side by side`);
-    const results = await Promise.all(CONFIGS.map((cfg) => runConfig(site, cfg, repeat, cfg.key === "baseline" && !discovery, inner)));
+    const results = await Promise.all(CONFIGS.map((cfg) => runConfigWithRetry(site, cfg, repeat, cfg.key === "baseline" && !discovery, inner)));
     for (const result of results) {
       runs.push(result.run);
       if (result.discovery && !discovery) {
@@ -265,9 +287,16 @@ export async function runBrowserAudit(site: URL, hooks: AuditHooks = {}): Promis
     inner ??= results[0].inner;
   }
   if (!discovery) hooks.onDiscovery?.({ privacyPolicy: [], optOut: [] });
+  if (discovery?.banner.detected) {
+    // Reject All and Accept All side by side, loading the same pages as the other visits.
+    hooks.onProgress?.("Clicking Reject All and Accept All on the consent banner");
+    const consentResults = await Promise.all(CONSENT_CONFIGS.map((cfg) => runConfigWithRetry(site, cfg, 1, false, inner)));
+    for (const result of consentResults) runs.push(result.run);
+  }
   const summary: BrowserAudit["summary"] = {};
-  for (const cfg of CONFIGS) {
-    const s = summarize(cfg.key, cfg.label, runs.filter((r) => r.config === cfg.key));
+  for (const cfg of [...CONFIGS, ...CONSENT_CONFIGS]) {
+    // A consent visit where no button was found just looks like the baseline, so it isn't summarized.
+    const s = summarize(cfg.key, cfg.label, runs.filter((r) => r.config === cfg.key && (!r.consent || r.consent.clicked)));
     if (s) summary[cfg.key] = s;
   }
   return {
