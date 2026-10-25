@@ -4,6 +4,7 @@ import { TopBar } from "../components/TopBar";
 import { FactsPanel } from "../components/FactsPanel";
 import { Evidence } from "../components/Evidence";
 import { NextSteps, PrioritiesForm } from "../components/Personal";
+import { NoGoSection } from "../components/NoGos";
 import { CookieTable, HowTested, Topics } from "../components/Details";
 import { loadPriorities, rankComparisons, savePriorities, type Priorities } from "../priorities";
 import { siteName } from "../words";
@@ -54,6 +55,8 @@ export function ReportScreen({ id }: { id: string }) {
             <div className="h-[560px] animate-pulse bg-ground-2" />
           </div>
         ) : (
+          <div className="grid gap-6">
+          <NoGoSection report={report} />
           <div className="grid items-start gap-6 lg:grid-cols-[440px_minmax(0,1fr)]">
             <div className="lg:sticky lg:top-6">
               <FactsPanel report={report} ranked={ranked} selected={current?.key} onSelect={select} />
@@ -72,6 +75,7 @@ export function ReportScreen({ id }: { id: string }) {
               <CookieTable report={report} />
               <HowTested report={report} />
             </div>
+          </div>
           </div>
         )}
       </main>

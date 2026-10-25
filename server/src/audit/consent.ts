@@ -1,4 +1,5 @@
 import type { Frame, Page } from "puppeteer";
+import { JobTimeoutError, withTimeout } from "../limits.js";
 
 export type ConsentChoice = "accept" | "reject";
 
@@ -35,6 +36,8 @@ const VENDOR_SELECTORS: Record<ConsentChoice, string[]> = {
 // or "Learn more" never match, so we can't wander into a preferences flow.
 const REJECT_LABEL = /^(reject|decline|deny|refuse|disagree)( all)?( (non-?essential|optional|non-?necessary))?( cookies)?$|^(only|use) (necessary|essential|required) cookies( only)?$|^(necessary|essential) (cookies )?only$/i;
 const ACCEPT_LABEL = /^(accept|agree|allow)( all)?( cookies)?$|^i (accept|agree)$|^accept (and|&) continue$/i;
+const FRAME_TIMEOUT_MS = 2_500;
+const SEARCH_TIMEOUT_MS = 10_000;
 const BANNER_HINT = /cookie|consent|gdpr|ccpa|cmp|privacy|onetrust|didomi|cybot|truste|osano|sp_message|usercentrics/i;
 
 /**
@@ -44,12 +47,19 @@ const BANNER_HINT = /cookie|consent|gdpr|ccpa|cmp|privacy|onetrust|didomi|cybot|
  */
 export async function clickConsent(page: Page, choice: ConsentChoice): Promise<ConsentClick> {
   // Several platforms (Sourcepoint, Usercentrics, many custom ones) render the banner in an iframe.
-  for (const frame of page.frames()) {
-    if (frame.detached) continue;
-    const result = await clickInFrame(frame, choice);
-    if (result.clicked) return result;
-  }
-  return { clicked: false };
+  // Ad frames can be slow or hung, so each frame and the whole search have a time limit.
+  const search = async (): Promise<ConsentClick> => {
+    for (const frame of page.frames()) {
+      if (frame.detached) continue;
+      const result = await withTimeout(clickInFrame(frame, choice), FRAME_TIMEOUT_MS, "frame too slow").catch((err) => {
+        if (err instanceof JobTimeoutError) return { clicked: false };
+        throw err;
+      });
+      if (result.clicked) return result;
+    }
+    return { clicked: false };
+  };
+  return withTimeout(search(), SEARCH_TIMEOUT_MS, "consent search too slow").catch(() => ({ clicked: false }));
 }
 
 async function clickInFrame(page: Frame, choice: ConsentChoice): Promise<ConsentClick> {

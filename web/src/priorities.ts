@@ -40,6 +40,7 @@ export const CLAIM_PRIORITY: Record<ClaimKey, PriorityKey> = {
   uses_third_party_trackers: "ads",
   tracking_requires_consent: "ads",
   respects_dnt: "ads",
+  uses_data_for_ai_training: "ai",
 };
 
 export const TOPIC_PRIORITY: Partial<Record<TopicKey, PriorityKey>> = {

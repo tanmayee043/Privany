@@ -1,12 +1,13 @@
 // End-to-end check of the extension against a running Privany server:
 // loads dist/ into Chrome, opens a site, clicks the Privany icon, waits for the
 // report, and saves a screenshot of the side panel.
-// Usage: npm run build -w extension && node extension/scripts/e2e.mjs https://duckduckgo.com/privacy [out.png]
+// Usage: npm run build -w extension && node extension/scripts/e2e.mjs https://duckduckgo.com/privacy [out.png] [no-go ids, comma separated]
 import puppeteer from "puppeteer";
 import { fileURLToPath } from "node:url";
 
 const target = process.argv[2] ?? "https://duckduckgo.com/privacy";
 const shot = process.argv[3] ?? "panel.png";
+const nogos = (process.argv[4] ?? "").split(",").filter(Boolean); // e.g. must_honor_gpc,no_sale
 const dist = fileURLToPath(new URL("../dist", import.meta.url));
 
 // Headless Chrome crashes when Puppeteer installs extensions over a pipe, so load it with launch flags.
@@ -20,6 +21,10 @@ await new Promise((r) => setTimeout(r, 1500));
 try {
   const ext = [...(await browser.extensions()).values()].find((e) => e.name === "Privany");
   if (!ext) throw new Error("Privany extension didn't load");
+  if (nogos.length) {
+    const [w] = await ext.workers();
+    await w.evaluate(async (selected) => chrome.storage.sync.set({ "privany.nogos.v1": { selected, strict: false } }), nogos);
+  }
   const page = await browser.newPage();
   await page.setViewport({ width: 1280, height: 900 });
   await page.goto(target, { waitUntil: "networkidle2", timeout: 60_000 }).catch(() => {});
@@ -52,6 +57,10 @@ try {
   await panel.waitForFunction(() => !document.body.innerText.includes("About a minute"), { timeout: 30_000 }).catch(() => {});
   await new Promise((r) => setTimeout(r, 1500));
   await panel.screenshot({ path: shot, fullPage: true });
+  // The top of the panel as a person sees it, with the first no-go's evidence open.
+  await panel.evaluate(() => document.querySelector("details summary")?.click());
+  await new Promise((r) => setTimeout(r, 300));
+  await panel.screenshot({ path: shot.replace(/\.png$/, "-top.png"), fullPage: false });
   console.log(`panel text:\n${(await panel.evaluate(() => document.body.innerText)).slice(0, 1500)}`);
 } finally {
   await browser.close();

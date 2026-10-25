@@ -25,6 +25,10 @@ export const CLAIMS: Record<ClaimKey, { title: string; definition: string }> = {
     title: "Waits for consent before tracking",
     definition: "yes = the policy says non-essential (analytics/advertising) cookies or trackers are used only after the user consents, for all users or for the user's region as stated. no = it says such cookies are used by default / unless the user opts out. unspecified = it doesn't say.",
   },
+  uses_data_for_ai_training: {
+    title: "Uses your data to train AI",
+    definition: "yes = the policy says user data or content is used to train, fine-tune or improve AI / machine-learning models or algorithms. no = it explicitly says user data or content is not used to train such models. unspecified = it doesn't say, or only mentions AI features without saying anything about training.",
+  },
   respects_dnt: {
     title: "Respects Do Not Track",
     definition: "yes = the policy says it responds to browser Do Not Track (DNT) signals. no = it says it does not respond to DNT. unspecified = DNT is not mentioned.",

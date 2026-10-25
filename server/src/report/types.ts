@@ -7,7 +7,8 @@ export type ClaimKey =
   | "shares_for_targeted_ads"
   | "uses_third_party_trackers"
   | "tracking_requires_consent"
-  | "respects_dnt";
+  | "respects_dnt"
+  | "uses_data_for_ai_training";
 
 export type ClaimValue = "yes" | "no" | "unspecified";
 
