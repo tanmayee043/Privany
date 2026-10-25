@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Privany",
   "version": "0.1.0",
-  "description": "Checks whether this site's privacy promises hold up: reads the policy you're viewing and tests the site with Global Privacy Control.",
+  "description": "Checks every site's privacy promises against what it does, warns you only when a site looks risky, and gives a full evidence report in a side panel.",
   "action": {
     "default_title": "Privany: check this site's privacy promises",
     "default_icon": {
@@ -21,6 +21,27 @@
     "service_worker": "background.js",
     "type": "module"
   },
-  "permissions": ["sidePanel", "activeTab", "scripting", "storage"],
-  "host_permissions": ["http://127.0.0.1:8787/*"]
+  "permissions": [
+    "sidePanel",
+    "activeTab",
+    "scripting",
+    "storage",
+    "webRequest",
+    "cookies"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
 }

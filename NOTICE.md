@@ -17,6 +17,14 @@ What we reuse, with changes:
 - The four cookie buckets from `cookie_categorization/cookie_categorization.py` (necessary, functional, performance/analytics, targeting/advertising).
 - The "joint lens" idea of comparing disclosures with observed behavior, implemented here as deterministic rules in `server/src/compare/rules.ts`.
 
+## PrivAudit data and tracker list (automatic checks)
+
+Prepared by `privany/data-pipeline/build_data.py` on the `features-updated` branch (Privany team):
+
+- `server/data/privaudit-prior-audits.json`: PrivAudit's released audits of 937 sites (claims, cookie counts and the paper's gap-rule findings, crawl of March 2025), from the Zenodo artifact, CC BY 4.0.
+- `extension/src/data/cookies.json`: cookie-name categories from PrivAudit's crawl (CC BY 4.0) with Open Cookie Database fallbacks (Apache 2.0).
+- `extension/src/data/trackers.json`: tracker domains, owners and categories from DuckDuckGo's Tracker Radar data set (TDS), https://github.com/duckduckgo/tracker-radar, licensed CC BY-NC-SA 4.0 (non-commercial, share-alike). Fine for this non-commercial project; replace it before any commercial use.
+
 ## Open Cookie Database
 
 `server/data/open-cookie-database.csv` is from https://github.com/jkwakman/Open-Cookie-Database, licensed under the Apache License 2.0.

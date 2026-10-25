@@ -123,3 +123,25 @@ describe("page text from the extension", () => {
     });
   });
 });
+
+describe("notes for form fields", () => {
+  const uses = (text: string) => read(text).r.fieldUses ?? [];
+
+  it("says what a personal detail is used for, keeping 'may'", () => {
+    const phone = uses("We may use your phone number to send you marketing text messages and we may share it with our marketing partners.").find((u) => u.field === "phone");
+    expect(phone?.purposes).toEqual(expect.arrayContaining(["marketing", "sharing"]));
+    expect(phone?.note).toBe("Their policy says your phone number may be used for marketing and shared with other companies.");
+    expect(phone?.quote.text).toMatch(/^We may use your phone number/);
+  });
+
+  it("prefers the sentence that names a purpose over a 'we collect' list", () => {
+    const bday = uses("We collect your name, email address and date of birth when you sign up.\n\nWe use your date of birth to send birthday offers and to personalize advertising.").find((u) => u.field === "birthday");
+    expect(bday?.purposes).toEqual(expect.arrayContaining(["ads", "marketing"]));
+    expect(bday?.quote.text).toMatch(/^We use your date of birth/);
+  });
+
+  it("claims no purpose when the sentence only lists the detail, or denies the use", () => {
+    expect(uses("We collect your email address when you create an account.").find((u) => u.field === "email")?.purposes).toEqual([]);
+    expect(uses("We do not sell or share your phone number with advertisers.").find((u) => u.field === "phone")?.purposes).toEqual([]);
+  });
+});

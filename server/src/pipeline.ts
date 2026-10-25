@@ -10,6 +10,7 @@ import { JobTimeoutError, QueueFullError, withTimeout } from "./limits.js";
 import { analyzePolicy, hasApiKey, PolicyAnalysisError } from "./policy/analyze.js";
 import { fetchPolicy, looksLikePolicy, PolicyFetchError, policyFromText, tryPolicyFromBlocks, type ExtractedPolicy, type RawBlock } from "./policy/extract.js";
 import { readPolicyWithRules } from "./policy/rules.js";
+import { ownPolicyScore, rankPolicyLinks } from "./policy/links.js";
 import { assertPublicUrl, normalizeUrl, UnsafeUrlError } from "./safety/url.js";
 
 export const REPORTS_DIR = fileURLToPath(new URL("../data/reports/", import.meta.url));
@@ -274,22 +275,32 @@ function isHttpUrl(s: string): boolean {
   return /^https?:\/\//i.test(s);
 }
 
-async function findPolicy(site: URL, candidates: string[], onProgress: (d: string) => void): Promise<ExtractedPolicy> {
-  const guesses = ["/privacy", "/privacy-policy", "/legal/privacy"].map((p) => new URL(p, site.origin).toString());
+export async function findPolicy(site: URL, candidates: string[], onProgress: (d: string) => void): Promise<ExtractedPolicy> {
+  const guesses = ["/privacy", "/privacy-policy", "/our-privacy-policy", "/privacy-notice", "/legal/privacy"].map((p) => new URL(p, site.origin).toString());
   const tried = new Set<string>();
   let lastError: unknown;
-  for (const href of [...candidates.slice(0, 3), ...guesses]) {
-    if (tried.has(href)) continue;
+  // A page that loads isn't necessarily the site's own policy (it may be a
+  // product page about privacy policies), so each one is checked before it's
+  // used; if none passes, the most policy-like page read is used.
+  let fallback: { policy: ExtractedPolicy; score: number } | undefined;
+  let attempts = 0;
+  for (const href of [...rankPolicyLinks(candidates).slice(0, 4), ...guesses]) {
+    if (tried.has(href) || attempts >= 6) continue;
     tried.add(href);
     try {
       const u = new URL(href);
       await assertPublicUrl(u);
+      attempts++;
       onProgress(`Reading ${u.hostname}${u.pathname}`);
-      return await fetchPolicy(u);
+      const policy = await fetchPolicy(u);
+      const check = ownPolicyScore(policy);
+      if (check.own) return policy;
+      if (!fallback || check.score > fallback.score) fallback = { policy, score: check.score };
     } catch (err) {
       lastError = err;
     }
   }
+  if (fallback) return fallback.policy;
   throw new PolicyFetchError(
     candidates.length
       ? `We found a privacy link but couldn't read it${lastError instanceof Error ? ` (${lastError.message})` : ""}. Paste the policy link or text instead.`

@@ -56,10 +56,16 @@ export function capturePage(): {
     const t = (a.innerText || a.getAttribute("aria-label") || "").toLowerCase();
     const h = a.href.toLowerCase();
     let score = 0;
-    if (/privacy (policy|notice|statement)/.test(t)) score += 10;
+    if (/^(?:our |the )?privacy (?:policy|notice|statement)$/.test(t.trim())) score += 16;
+    else if (/privacy (policy|notice|statement)/.test(t)) score += 10;
     else if (/privacy/.test(t)) score += 5;
-    if (/privacy[-_]?(policy|notice|statement)/.test(h)) score += 4;
+    if (/\/(?:our-)?privacy(?:-policy|-notice|-statement)?\/?(?:[?#]|$)|\/legal\/privacy/.test(h)) score += 8;
+    else if (/privacy[-_]?(policy|notice|statement)/.test(h)) score += 4;
     else if (/privacy/.test(h)) score += 2;
+    // Product, template and article pages about privacy aren't the site's own policy
+    // (same rules as server/src/policy/links.ts).
+    if (/generator|template|builder|\bsamples?\b|\bexamples?\b|\/products?\/|\/solutions?\/|\/resources?\/|\/blog\/|\/learn\/|\/guides?\/|laws?-tracker|data-privacy-laws|privacy-center|trust-center|verification|commitment/.test(`${t} ${h}`)) score -= 14;
+    if (a.closest("footer") || /\bagree\b/.test((a.parentElement?.textContent || "").toLowerCase())) score += 3;
     if (/choices|settings|do not sell|opt[- ]out/.test(t)) score -= 6;
     if (score > 0) scored.push({ href: a.href.split("#")[0], score });
   }

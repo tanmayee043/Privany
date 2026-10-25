@@ -12,6 +12,7 @@ import { CookieTable, HowTested, Topics } from "../../web/src/components/Details
 import { ClickTestSection } from "../../web/src/components/ClickTest";
 import { loadPriorities, rankComparisons, savePriorities, type Priorities } from "../../web/src/priorities";
 import { siteName } from "../../web/src/words";
+import { autoCheckEnabled, mutedSites, setAutoCheck, unmuteSite } from "./settings";
 import type { TabState } from "./shared";
 
 const tabId = Number(new URLSearchParams(location.search).get("tab"));
@@ -97,13 +98,17 @@ function Panel() {
           <div className="grid grid-cols-1 gap-3">
             <FirstUseNoGos />
             <Idle />
+            <AutoCheckSettings />
           </div>
         ) : state.phase === "error" ? (
           <Message title={state.offline ? "Privany's server isn't running" : "Couldn't check this page"} body={state.error} />
         ) : error ? (
           <Message title="Something went wrong" body={error} />
         ) : report ? (
-          <ReportView report={report} />
+          <div className="grid grid-cols-1 gap-3">
+            <ReportView report={report} />
+            <AutoCheckSettings site={report.site} />
+          </div>
         ) : (
           <div className="grid grid-cols-1 gap-3">
             <FirstUseNoGos />
@@ -145,6 +150,59 @@ function Idle() {
         </p>
       )}
       <p className="mt-2 text-[12px] text-ink-3">If nothing happens, click the Privany icon in the toolbar while this tab is open.</p>
+    </section>
+  );
+}
+
+/** On/off for automatic checking, and undoing "don't warn me on this site". */
+function AutoCheckSettings({ site }: { site?: string }) {
+  const [enabled, setEnabled] = useState<boolean | null>(null);
+  const [muted, setMuted] = useState<string[]>([]);
+  useEffect(() => {
+    void autoCheckEnabled().then(setEnabled);
+    void mutedSites().then(setMuted);
+  }, []);
+  if (enabled === null) return null;
+  const registrable = muted.find((m) => site && (site === m || site.endsWith(`.${m}`)));
+  return (
+    <section aria-labelledby="auto-title" className="bg-paper px-4 py-4">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 id="auto-title" className="text-[16px] font-extrabold">Check every site automatically</h2>
+          <p className="mt-1 text-[13px] text-ink-2">
+            Privany looks at each site you open and only interrupts when one looks risky. It notes the trackers and cookies the page loads and asks the Privany server on this computer to read the policy. Nothing is sent anywhere else.
+          </p>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={enabled}
+          aria-labelledby="auto-title"
+          onClick={() => {
+            const next = !enabled;
+            setEnabled(next);
+            void setAutoCheck(next);
+          }}
+          className={`relative mt-1 h-7 w-12 flex-none rounded-full border-2 border-ink transition-colors ${enabled ? "bg-ink" : "bg-paper"}`}
+        >
+          <span className={`absolute top-0.5 h-5 w-5 rounded-full transition-transform ${enabled ? "translate-x-[22px] bg-white" : "translate-x-0.5 bg-ink"}`} />
+        </button>
+      </div>
+      {registrable && (
+        <p className="mt-3 text-[13px] text-ink-2">
+          Warnings are off for {registrable}.{" "}
+          <button
+            type="button"
+            className="font-semibold text-evidence underline"
+            onClick={() => {
+              void unmuteSite(registrable);
+              setMuted(muted.filter((m) => m !== registrable));
+            }}
+          >
+            Turn them back on
+          </button>
+        </p>
+      )}
     </section>
   );
 }

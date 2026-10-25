@@ -7,8 +7,18 @@
     "strict": true,
     "skipLibCheck": true,
     "noEmit": true,
-    "lib": ["ES2023", "DOM", "DOM.Iterable"],
-    "types": ["vite/client", "chrome"]
+    "lib": [
+      "ES2023",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "types": [
+      "vite/client",
+      "chrome"
+    ],
+    "resolveJsonModule": true
   },
-  "include": ["src"]
+  "include": [
+    "src"
+  ]
 }

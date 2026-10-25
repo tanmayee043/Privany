@@ -37,7 +37,7 @@ Other tools summarize policies. Privany also tests behavior, using the dual-lens
 - No numeric privacy score.
 - Personal priorities are stored locally in the browser.
 - Must run at no cost: the default policy reader is rule-based and offline; paid AI is opt-in only.
-- The extension reads a page only when its icon is clicked on it, and sends only visible text.
+- Automatic mode (on by default, switchable): the extension observes every site's ad-tech requests and tracking cookies and reads its policy via the local server; it interrupts only for red-level sites. All data stays on the user's machine (localhost server). The full report still runs only on click.
 - Undecided: site comparison, Reject-All consent test, opt-out request drafting, local AI model (planned add-ons).
 
 ## Brand Commitments

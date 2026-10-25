@@ -75,10 +75,24 @@ export interface PolicyAnalysis {
   claims: PolicyClaim[];
   topics: PolicyTopic[];
   optOuts: OptOut[];
+  /** What the policy says it does with specific personal details, for notes under form fields. */
+  fieldUses?: FieldUse[];
   evidence: EvidenceCounts;
   /** Text in the policy that looked like instructions aimed at an AI. */
   injectionWarnings: string[];
   model: string;
+}
+
+export type FieldKind = "phone" | "email" | "birthday" | "address" | "location" | "gender" | "payment" | "government_id" | "photo" | "contacts";
+export type FieldPurpose = "marketing" | "ads" | "sharing" | "sale";
+
+export interface FieldUse {
+  field: FieldKind;
+  /** Only purposes the quoted sentence names; empty when it only says the detail is collected. */
+  purposes: FieldPurpose[];
+  /** One plain sentence for the note under the form field. */
+  note: string;
+  quote: Quote;
 }
 
 export type CookieCategory = "necessary" | "functional" | "analytics" | "advertising" | "unknown";
@@ -223,4 +237,29 @@ export interface JobStatus {
   error?: string;
   /** True when an earlier report for the same inputs was reused instead of re-running the audit. */
   cached?: boolean;
+}
+
+/** PrivAudit's own 2025 audit of a site, from the paper's released data (937 sites). */
+export interface PriorAudit {
+  crawlDate: string;
+  policyUrl?: string;
+  /** Disclosure-vs-behavior gaps the researchers' rules found. */
+  gaps: { rule: string; detail: string }[];
+}
+
+/** The fast, automatic check run on every site: policy promises only, no test visits. */
+export interface QuickCheck {
+  site: string;
+  checkedAt: string;
+  policy?: {
+    url?: string;
+    title?: string;
+    isPrivacyPolicy: boolean;
+    claims: { key: ClaimKey; value: ClaimValue; summary: string; quote?: Quote }[];
+    topics: { key: TopicKey; status: TopicStatus }[];
+    optOuts: { kind: OptOutKind; label: string }[];
+    fieldUses: FieldUse[];
+  };
+  policyError?: string;
+  priorAudit?: PriorAudit;
 }

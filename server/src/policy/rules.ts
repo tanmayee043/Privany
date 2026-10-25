@@ -1,4 +1,4 @@
-import type { ClaimKey, ClaimValue, OptOut, OptOutKind, PolicyAnalysis, PolicyBlock, PolicyClaim, PolicyTopic, Quote, TopicKey, TopicStatus } from "../report/types.js";
+import type { ClaimKey, ClaimValue, FieldKind, FieldPurpose, OptOut, OptOutKind, PolicyAnalysis, PolicyBlock, PolicyClaim, PolicyTopic, Quote, TopicKey, TopicStatus } from "../report/types.js";
 import type { ExtractedPolicy } from "./extract.js";
 import { findInjectionAttempts, verifyQuotes } from "./verify.js";
 
@@ -280,6 +280,74 @@ function findOptOuts(all: Sentence[]): OptOut[] {
   return out;
 }
 
+// Personal details a sign-up or checkout form asks for, and how a policy names them.
+// Ported from the features-updated branch (privany/backend/privany/analyze.py).
+const FIELD_PATTERNS: Record<FieldKind, RegExp> = {
+  phone: /phone number|mobile number|telephone number|cell(?:ular)? (?:phone )?number/i,
+  email: /e-?mail address/i,
+  birthday: /date of birth|birthday|birth ?date/i,
+  address: /(?:postal|mailing|billing|shipping|home|street) address/i,
+  location: /(?:precise |geo-?)?location(?: data| information)?/i,
+  gender: /\bgender\b/i,
+  payment: /payment (?:information|card|details)|credit (?:or debit )?card/i,
+  government_id: /social security|driver'?s licen[cs]e|passport number|government[- ]issued/i,
+  photo: /\bphotos?\b|profile picture|images? (?:of you|you upload)/i,
+  contacts: /\bcontacts\b|address book/i,
+};
+
+const FIELD_WORDS: Record<FieldKind, string> = {
+  phone: "phone number",
+  email: "email address",
+  birthday: "date of birth",
+  address: "address",
+  location: "location",
+  gender: "gender",
+  payment: "payment details",
+  government_id: "ID number",
+  photo: "photos",
+  contacts: "contacts",
+};
+
+const PURPOSES: [FieldPurpose, RegExp][] = [
+  ["sale", /\bsell|\bsold\b|\bsale\b/i],
+  ["ads", /advertis|interest-based|\bads?\b/i],
+  ["marketing", /marketing|promotion|offers?\b|newsletters?/i],
+  ["sharing", /\bshar(?:e|ed|ing)\b|disclose|third[- ]part(?:y|ies)|partners/i],
+];
+
+/** For each personal detail, the sentence that says what it's used for (not just that it's collected). */
+function findFieldUses(all: Sentence[]): { field: FieldKind; purposes: FieldPurpose[]; note: string; quote: Quote }[] {
+  const out: { field: FieldKind; purposes: FieldPurpose[]; note: string; quote: Quote }[] = [];
+  for (const field of Object.keys(FIELD_PATTERNS) as FieldKind[]) {
+    let best: { s: Sentence; score: number } | undefined;
+    for (const s of all) {
+      if (!FIELD_PATTERNS[field].test(s.text)) continue;
+      const purposes = PURPOSES.filter(([, re]) => re.test(s.text)).length;
+      // Prefer sentences naming a purpose over "we collect X, Y and Z" lists.
+      const score = purposes * 3 + (/\b(?:use|used|send|show|personali[sz]e)\b/i.test(s.text) ? 2 : 0) - (/\bwe (?:may )?collect\b/i.test(s.text) ? 1 : 0);
+      if (!best || score > best.score) best = { s, score };
+    }
+    if (!best) continue;
+    const negated = neg("(?:sell|share|use|disclose)").test(best.s.text);
+    const purposes = negated ? [] : PURPOSES.filter(([, re]) => re.test(best!.s.text)).map(([p]) => p);
+    const may = /\bmay\b/i.test(best.s.text) ? "may be " : "is ";
+    const what = FIELD_WORDS[field];
+    const usedFor = (["ads", "marketing"] as const).filter((p) => purposes.includes(p));
+    const parts = [
+      ...(usedFor.length ? [`used for ${usedFor.join(" and ")}`] : []),
+      ...(purposes.includes("sharing") ? ["shared with other companies"] : []),
+      ...(purposes.includes("sale") ? ["sold"] : []),
+    ];
+    // A negation ("we do not sell your phone number") means no purpose is claimed; the
+    // note stays neutral rather than guessing what the sentence limits.
+    const note = parts.length
+      ? `Their policy says your ${what} ${may}${parts.join(", ").replace(/, ([^,]*)$/, " and $1")}.`
+      : `Their policy mentions your ${what} but doesn't say it's used for marketing, ads or sharing.`;
+    out.push({ field, purposes, note, quote: quote(best.s) });
+  }
+  return out;
+}
+
 export function readPolicyWithRules(policy: ExtractedPolicy, opts: { pasted: boolean }): PolicyAnalysis {
   const all = sentences(policy.blocks);
   const index = new Map(policy.blocks.map((b) => [b.id, b]));
@@ -302,6 +370,10 @@ export function readPolicyWithRules(policy: ExtractedPolicy, opts: { pasted: boo
     return { ...t, quotes: check(t.quotes) };
   });
   const optOuts = findOptOuts(all).map((o) => ({ ...o, quotes: check(o.quotes) }));
+  const fieldUses = findFieldUses(all).flatMap((f) => {
+    const [q] = check([f.quote]);
+    return q ? [{ ...f, quote: q }] : [];
+  });
   const policyWords = all.filter((s) => /personal (?:information|data)|privacy|cookies?/i.test(s.text)).length;
   return {
     source: { url: policy.url, pasted: opts.pasted, retrievedAt: policy.retrievedAt, title: policy.title, sha256: policy.sha256, chars: policy.chars, truncated: policy.truncated },
@@ -310,6 +382,7 @@ export function readPolicyWithRules(policy: ExtractedPolicy, opts: { pasted: boo
     claims,
     topics,
     optOuts,
+    fieldUses,
     evidence: { proposed, verified },
     injectionWarnings: findInjectionAttempts(policy.blocks),
     model: RULES_MODEL,

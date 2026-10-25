@@ -1,23 +1,49 @@
 /// <reference types="chrome" />
 import { capturePage } from "./capture";
+import { muteSite } from "./settings";
 import { API_BASE, type TabState } from "./shared";
+import { assessTab, startWatching } from "./watch";
 
-// Clicking the toolbar icon opens Privany's side panel for that tab only and
-// starts a check of the page the user is looking at. Privany sees a page only
-// when its icon is clicked on it (the activeTab permission).
+// Two ways in. Automatic: every page gets a quick check (watch.ts) and risky
+// sites show a panel on the page. On demand: clicking the toolbar icon (or the
+// panel's "Full report") opens Privany's side panel for that tab and runs the
+// full check with test visits.
+
+startWatching();
+
+function openFullReport(tabId: number) {
+  // Both calls must run straight away, inside the user's click, for Chrome to allow opening the panel.
+  void chrome.sidePanel.setOptions({ tabId, path: `sidepanel.html?tab=${tabId}`, enabled: true });
+  const opened = chrome.sidePanel.open({ tabId });
+  void startCheck(tabId);
+  return opened;
+}
 
 chrome.action.onClicked.addListener((tab) => {
   if (tab.id === undefined) return;
-  const tabId = tab.id;
-  // Both calls must run straight away, inside the click, for Chrome to allow opening the panel.
-  void chrome.sidePanel.setOptions({ tabId, path: `sidepanel.html?tab=${tabId}`, enabled: true });
-  void chrome.sidePanel.open({ tabId });
-  void startCheck(tabId);
+  void openFullReport(tab.id);
 });
 
-chrome.runtime.onMessage.addListener((msg: { type?: string; tabId?: number }) => {
+type Msg = { type?: string; tabId?: number; url?: string; policyLinks?: string[]; bannerVisible?: boolean; site?: string };
+
+chrome.runtime.onMessage.addListener((msg: Msg, sender, reply) => {
+  const tabId = sender.tab?.id;
   // "Check again" skips the server's cache of recent results.
   if (msg.type === "privany:recheck" && typeof msg.tabId === "number") void startCheck(msg.tabId, { fresh: true });
+  if (msg.type === "privany:page" && tabId !== undefined && msg.url) {
+    void assessTab(tabId, { url: msg.url, policyLinks: msg.policyLinks ?? [], bannerVisible: Boolean(msg.bannerVisible) });
+  }
+  if (msg.type === "privany:mute" && msg.site) void muteSite(msg.site);
+  if (msg.type === "privany:open-report" && tabId !== undefined) {
+    // The click on the page's panel counts as the user's gesture; if Chrome
+    // still refuses, the panel tells the user to use the toolbar icon.
+    openFullReport(tabId).then(
+      () => reply(true),
+      () => reply(false),
+    );
+    return true;
+  }
+  return false;
 });
 
 // Moving the tab to a different site clears its result; reloads and in-site

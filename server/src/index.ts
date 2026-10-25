@@ -4,6 +4,7 @@ import { closeBrowser } from "./audit/browser.js";
 import { QueueFullError, rateLimit } from "./limits.js";
 import { getJob, listReports, loadReport, policyReader, startJob, type AnalyzeInput } from "./pipeline.js";
 import type { RawBlock } from "./policy/extract.js";
+import { quickCheck } from "./quick.js";
 import { UnsafeUrlError } from "./safety/url.js";
 
 // Settings live in the repo-root .env (see .env.example); it's optional.
@@ -53,6 +54,25 @@ app.post("/api/analyze", rateLimit({ windowMs: 60_000, max: perMinute("PRIVANY_R
       res.status(503).json({ error: err.message });
       return;
     }
+    if (err instanceof UnsafeUrlError) {
+      res.status(400).json({ error: err.message });
+      return;
+    }
+    throw err;
+  }
+});
+
+// The automatic check the extension runs on every site: policy only, cached per site.
+app.post("/api/quick", rateLimit({ windowMs: 60_000, max: perMinute("PRIVANY_QUICK_LIMIT_PER_MIN", 120) }), async (req, res) => {
+  const { url, policyLinks } = (req.body ?? {}) as Record<string, unknown>;
+  if (typeof url !== "string") {
+    res.status(400).json({ error: "Missing site address." });
+    return;
+  }
+  const links = Array.isArray(policyLinks) ? policyLinks.filter((l): l is string => typeof l === "string").slice(0, 10) : [];
+  try {
+    res.json(await quickCheck(url, links));
+  } catch (err) {
     if (err instanceof UnsafeUrlError) {
       res.status(400).json({ error: err.message });
       return;

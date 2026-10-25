@@ -17,9 +17,10 @@ export default defineConfig({
     outDir: "dist",
     emptyOutDir: true,
     rollupOptions: {
-      input: { sidepanel: "sidepanel.html", background: "src/background.ts" },
+      input: { sidepanel: "sidepanel.html", background: "src/background.ts", content: "src/content.ts" },
       output: {
-        entryFileNames: (chunk) => (chunk.name === "background" ? "background.js" : "assets/[name]-[hash].js"),
+        // background.js and content.js keep fixed names because the manifest points to them.
+        entryFileNames: (chunk) => (chunk.name === "background" || chunk.name === "content" ? `${chunk.name}.js` : "assets/[name]-[hash].js"),
       },
     },
   },
