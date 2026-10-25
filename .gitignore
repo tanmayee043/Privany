@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.env
+server/data/reports/*.json
+!server/data/reports/.gitkeep
+*.log
+.DS_Store
+
+# Design-tool scratch files (decision sketches and session state)
+web/.impeccable/mocks/
+web/.impeccable/questions/

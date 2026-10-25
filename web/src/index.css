@@ -1,0 +1,122 @@
+@import "@fontsource/archivo/400.css";
+@import "@fontsource/archivo/500.css";
+@import "@fontsource/archivo/600.css";
+@import "@fontsource/archivo/700.css";
+@import "@fontsource/archivo/800.css";
+@import "@fontsource/archivo-narrow/700.css";
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Archivo", ui-sans-serif, system-ui, sans-serif;
+  --font-label: "Archivo Narrow", "Archivo", ui-sans-serif, sans-serif;
+
+  --color-ink: #111111;
+  --color-ink-2: #3d4250;
+  --color-ink-3: #5b6170;
+  --color-ground: #e9edf3;
+  --color-ground-2: #dfe4ec;
+  --color-paper: #ffffff;
+  --color-line: #d4d9e2;
+  --color-evidence: #1d4ed8;
+  --color-evidence-tint: #eef2fb;
+  --color-gap: #b42318;
+  --color-gap-tint: #fde7e5;
+  --color-match: #166534;
+}
+
+@layer base {
+  html {
+    background: var(--color-ground);
+    color: var(--color-ink);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    font-family: var(--font-sans);
+    font-size: 15px;
+    line-height: 1.5;
+    font-variant-numeric: tabular-nums;
+  }
+  ::selection {
+    background: #c7d6fb;
+    color: var(--color-ink);
+  }
+  :focus-visible {
+    outline: 3px solid var(--color-evidence);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+  a {
+    text-underline-offset: 3px;
+    text-decoration-thickness: 1px;
+  }
+  input,
+  textarea {
+    caret-color: var(--color-evidence);
+  }
+  * {
+    scrollbar-color: #a9b1bf transparent;
+  }
+}
+
+/* The label's three rule weights: the bar, the divider and the line. */
+.rule-bar {
+  border-top: 10px solid var(--color-ink);
+}
+.rule-div {
+  border-top: 5px solid var(--color-ink);
+}
+.rule-line {
+  border-top: 1px solid var(--color-ink);
+}
+
+/* Verdict marks carry state by line form, so colour is never the only cue. */
+.mark {
+  display: inline-block;
+  width: 22px;
+  flex: none;
+  height: 0;
+}
+.mark-possible_gap {
+  border-top: 4px solid var(--color-gap);
+}
+.mark-consistent {
+  border-top: 4px solid var(--color-ink);
+}
+.mark-not_stated {
+  border-top: 3px dashed var(--color-ink-3);
+}
+.mark-not_testable,
+.mark-inconclusive {
+  border-top: 3px dotted var(--color-ink-3);
+}
+
+@keyframes print-in {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+.print-in {
+  animation: print-in 380ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes pulse-bar {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.working {
+  animation: pulse-bar 1.2s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .print-in,
+  .working {
+    animation: none;
+  }
+}
