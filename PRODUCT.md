@@ -8,7 +8,7 @@ web
 
 ## Stack
 
-React + Vite + Tailwind (TypeScript) frontend in `web/`; Node + Express + Puppeteer + Claude API backend in `server/`. Confirmed by the team.
+Chrome extension (Manifest V3 side panel) in `extension/` as the main way to use it; React + Vite + Tailwind (TypeScript) web app in `web/`; Node + Express + Puppeteer backend in `server/`. Policy reading is free and offline by default (rule-based); Claude is optional. Confirmed by the team.
 
 ## Users
 
@@ -24,7 +24,7 @@ Other tools summarize policies. Privany also tests behavior, using the dual-lens
 
 ## Operating Context
 
-- A user pastes a site address (optionally a policy link or the policy text) and waits about 1–2 minutes while four browser visits and a policy analysis run.
+- A user opens a site's privacy policy (or any page of the site), clicks the Privany toolbar icon, and a side panel on the same page shows progress and then the report, in about 1–2 minutes. The web app offers the same from a pasted address.
 - The report is read once, top-down, then specific findings are expanded for evidence.
 - Demo context: shown live or replayed from saved reports on a projector during a 3-minute hackathon pitch.
 
@@ -36,7 +36,9 @@ Other tools summarize policies. Privany also tests behavior, using the dual-lens
 - Observation scope: homepage only, no login, no clicks, server location, cookies only (no fingerprinting/server-side).
 - No numeric privacy score.
 - Personal priorities are stored locally in the browser.
-- Undecided: browser extension, site comparison, Reject-All consent test, opt-out request drafting (planned add-ons).
+- Must run at no cost: the default policy reader is rule-based and offline; paid AI is opt-in only.
+- The extension reads a page only when its icon is clicked on it, and sends only visible text.
+- Undecided: site comparison, Reject-All consent test, opt-out request drafting, local AI model (planned add-ons).
 
 ## Brand Commitments
 

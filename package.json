@@ -5,13 +5,16 @@
   "description": "Checks whether a website's privacy promises hold up, and helps you decide what to do about it.",
   "workspaces": [
     "server",
-    "web"
+    "web",
+    "extension"
   ],
   "scripts": {
     "dev": "concurrently -n server,web -c blue,magenta \"npm run dev -w server\" \"npm run dev -w web\"",
-    "build": "npm run build -w server && npm run build -w web",
+    "build": "npm run build -w web && npm run build -w extension",
     "test": "npm test -w server",
-    "typecheck": "npm run typecheck -w server && npm run typecheck -w web"
+    "typecheck": "npm run typecheck -w server && npm run typecheck -w web && npm run typecheck -w extension",
+    "build:extension": "npm run build -w extension",
+    "dev:extension": "npm run watch -w extension"
   },
   "devDependencies": {
     "concurrently": "^9.2.5"

@@ -86,7 +86,7 @@ function Counts({ c }: { c: Comparison }) {
   const cells: { label: string; value: number; sub: string }[] = [];
   if (baseline) cells.push({ label: "Ad cookies, default browser", value: baseline.stable.advertising, sub: range(baseline, ads) });
   if (gpc) cells.push({ label: "Ad cookies, GPC on", value: gpc.stable.advertising, sub: range(gpc, ads) });
-  if (c.observed!.cookies) cells.push({ label: "Cookies behind this result", value: c.observed!.cookies.length, sub: "listed below" });
+  if (c.observed!.cookies) cells.push({ label: "Cookies behind this result", value: c.observed!.cookies.length, sub: c.observed!.cookies.length ? "listed below" : "none found" });
   return (
     <div className="mt-6">
       <h3 className="text-[13px] font-bold uppercase tracking-[0.08em] text-ink-2">What the browser saw</h3>

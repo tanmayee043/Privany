@@ -9,3 +9,6 @@ server/data/reports/*.json
 # Design-tool scratch files (decision sketches and session state)
 web/.impeccable/mocks/
 web/.impeccable/questions/
+
+# Built extension (load it from here after npm run build:extension)
+extension/dist/

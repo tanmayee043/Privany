@@ -1,5 +1,5 @@
 import type { BrowserAudit, ClaimKey, Comparison, ObservedCookie, PolicyAnalysis, PolicyClaim, Verdict } from "../report/types.js";
-import { CLAIMS } from "../policy/analyze.js";
+import { CLAIMS } from "../policy/definitions.js";
 import { isTracking } from "../audit/cookies.js";
 
 // Deterministic rules that set each policy claim against what the browser

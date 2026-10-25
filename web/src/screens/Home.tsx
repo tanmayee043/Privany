@@ -15,11 +15,9 @@ export function Home() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [recent, setRecent] = useState<Recent | null>(null);
-  const [analysisOn, setAnalysisOn] = useState<boolean | null>(null);
 
   useEffect(() => {
     api.reports().then(setRecent, () => setRecent([]));
-    api.health().then((h) => setAnalysisOn(h.policyAnalysis), () => setAnalysisOn(null));
   }, []);
 
   async function submit(e: FormEvent) {
@@ -137,7 +135,6 @@ export function Home() {
           </dl>
           <p className="rule-div pt-2 text-[12px] leading-snug text-ink-2">
             About a minute per site. Results describe what a browser can observe; they aren't legal findings. Measurement method from PrivAudit (ACM CCS 2026).
-            {analysisOn === false && <strong className="block pt-1 text-gap">Policy reading is off on this server (no Claude API key), so you'll get the browser test only.</strong>}
           </p>
         </section>
 

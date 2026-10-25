@@ -51,14 +51,34 @@ export function policyFromText(text: string): ExtractedPolicy {
   return finish(raw, {});
 }
 
-function finish(raw: { kind: "heading" | "text"; text: string }[], meta: { url?: string; title?: string }): ExtractedPolicy {
+export type RawBlock = { kind: "heading" | "text"; text: string };
+
+/** Builds a policy from blocks the extension read off the open tab; undefined when there's too little text. */
+export function tryPolicyFromBlocks(raw: RawBlock[], meta: { url?: string; title?: string }): ExtractedPolicy | undefined {
+  try {
+    return finish(raw, meta);
+  } catch (err) {
+    if (err instanceof PolicyFetchError) return undefined;
+    throw err;
+  }
+}
+
+/** A quick check that a page is a privacy policy and not, say, a homepage. */
+export function looksLikePolicy(p: ExtractedPolicy): boolean {
+  const text = p.blocks.map((b) => b.text).join(" ");
+  const hits = text.match(/personal (?:information|data)|privacy|cookies?|third[- ]part(?:y|ies)|opt[- ]?out|retain|disclos/gi)?.length ?? 0;
+  return p.chars >= 2000 && hits >= 15;
+}
+
+function finish(raw: RawBlock[], meta: { url?: string; title?: string }): ExtractedPolicy {
   const blocks: PolicyBlock[] = [];
   let section: string | undefined;
   let chars = 0;
   let truncated = false;
   const seen = new Set<string>();
   for (const r of raw) {
-    const text = r.text.replace(/\s+/g, " ").trim();
+    // Braille blanks and no-break spaces are used as invisible bullets on some sites.
+    const text = r.text.replace(/[⠀ ]+/g, " ").replace(/\s+/g, " ").trim();
     if (!text || seen.has(text)) continue;
     seen.add(text);
     if (chars + text.length > MAX_POLICY_CHARS) {

@@ -1,8 +1,8 @@
 import { fileURLToPath } from "node:url";
 import express from "express";
 import { closeBrowser } from "./audit/browser.js";
-import { hasApiKey } from "./policy/analyze.js";
-import { getJob, listReports, loadReport, startJob } from "./pipeline.js";
+import { getJob, listReports, loadReport, policyReader, startJob, type AnalyzeInput } from "./pipeline.js";
+import type { RawBlock } from "./policy/extract.js";
 import { UnsafeUrlError } from "./safety/url.js";
 
 // Settings live in the repo-root .env (see .env.example); it's optional.
@@ -14,16 +14,21 @@ try {
 
 const app = express();
 app.disable("x-powered-by");
-app.use(express.json({ limit: "1mb" }));
+app.use(express.json({ limit: "4mb" }));
 
 app.get("/api/health", (_req, res) => {
-  res.json({ ok: true, policyAnalysis: hasApiKey() });
+  res.json({ ok: true, policyReader: policyReader() });
 });
 
 app.post("/api/analyze", (req, res) => {
-  const { url, policyUrl, policyText } = (req.body ?? {}) as Record<string, unknown>;
+  const { url, policyUrl, policyText, page } = (req.body ?? {}) as Record<string, unknown>;
   if (typeof url !== "string") {
     res.status(400).json({ error: "Enter a website address." });
+    return;
+  }
+  const parsedPage = page === undefined ? undefined : parsePage(page);
+  if (parsedPage === null) {
+    res.status(400).json({ error: "The page text sent by the extension wasn't in the expected format." });
     return;
   }
   try {
@@ -31,6 +36,7 @@ app.post("/api/analyze", (req, res) => {
       url,
       policyUrl: typeof policyUrl === "string" && policyUrl.trim() ? policyUrl : undefined,
       policyText: typeof policyText === "string" && policyText.trim() ? policyText : undefined,
+      page: parsedPage,
     });
     res.status(202).json(job);
   } catch (err) {
@@ -64,9 +70,28 @@ app.get("/api/reports/:id", async (req, res) => {
   res.json(report);
 });
 
+/** Checks the shape and size of page text from the extension; null when it's malformed. */
+function parsePage(value: unknown): AnalyzeInput["page"] | null {
+  if (!value || typeof value !== "object") return null;
+  const p = value as Record<string, unknown>;
+  if (typeof p.url !== "string" || !Array.isArray(p.blocks) || p.blocks.length > 8000) return null;
+  let chars = 0;
+  const blocks: RawBlock[] = [];
+  for (const b of p.blocks) {
+    const kind = (b as Record<string, unknown>)?.kind;
+    const text = (b as Record<string, unknown>)?.text;
+    if ((kind !== "heading" && kind !== "text") || typeof text !== "string") return null;
+    chars += text.length;
+    if (chars > 600_000) return null;
+    blocks.push({ kind, text: text.slice(0, 20_000) });
+  }
+  const links = Array.isArray(p.policyLinks) ? p.policyLinks.filter((l): l is string => typeof l === "string").slice(0, 10) : [];
+  return { url: p.url, title: typeof p.title === "string" ? p.title.slice(0, 300) : undefined, blocks, policyLinks: links };
+}
+
 const port = Number(process.env.PORT ?? 8787);
 const server = app.listen(port, "127.0.0.1", () => {
-  console.log(`Privany API on http://127.0.0.1:${port} (policy analysis ${hasApiKey() ? "on" : "off: set ANTHROPIC_API_KEY"})`);
+  console.log(`Privany API on http://127.0.0.1:${port} (policy reader: ${policyReader() === "claude" ? "Claude" : "free rule-based"})`);
 });
 
 for (const sig of ["SIGINT", "SIGTERM"] as const) {

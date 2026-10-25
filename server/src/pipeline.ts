@@ -6,7 +6,8 @@ import type { BrowserAudit, JobStatus, PolicyAnalysis, Report, StepKey, StepStat
 import { runBrowserAudit } from "./audit/run.js";
 import { compare } from "./compare/rules.js";
 import { analyzePolicy, hasApiKey, PolicyAnalysisError } from "./policy/analyze.js";
-import { fetchPolicy, PolicyFetchError, policyFromText, type ExtractedPolicy } from "./policy/extract.js";
+import { fetchPolicy, looksLikePolicy, PolicyFetchError, policyFromText, tryPolicyFromBlocks, type ExtractedPolicy, type RawBlock } from "./policy/extract.js";
+import { readPolicyWithRules } from "./policy/rules.js";
 import { assertPublicUrl, normalizeUrl, UnsafeUrlError } from "./safety/url.js";
 
 export const REPORTS_DIR = fileURLToPath(new URL("../data/reports/", import.meta.url));
@@ -15,6 +16,8 @@ export interface AnalyzeInput {
   url: string;
   policyUrl?: string;
   policyText?: string;
+  /** The open page's text, read by the browser extension from the user's tab. */
+  page?: { url: string; title?: string; blocks: RawBlock[]; policyLinks: string[] };
 }
 
 const STEP_LABELS: Record<StepKey, string> = {
@@ -24,6 +27,12 @@ const STEP_LABELS: Record<StepKey, string> = {
   policy_analyze: "Pulling out the policy's promises, with quotes",
   compare: "Comparing promises with what we saw",
 };
+
+// The free rule-based reader is the default. Claude is used only when asked
+// for explicitly, so nobody runs up API charges by accident.
+export function policyReader(): "claude" | "rules" {
+  return process.env.PRIVANY_POLICY_READER === "claude" && hasApiKey() ? "claude" : "rules";
+}
 
 const LIMITATIONS = [
   "Privany compares what a policy says with what a browser can observe. It doesn't prove what a company does with data on its servers, and it isn't legal advice.",
@@ -43,6 +52,7 @@ export function startJob(input: AnalyzeInput): JobStatus {
   const site = normalizeUrl(input.url);
   if (input.policyUrl) normalizeUrl(input.policyUrl);
   if (input.policyText && input.policyText.length > 400_000) throw new UnsafeUrlError("The pasted policy is too long (400,000 characters max).");
+  if (input.page) normalizeUrl(input.page.url);
   const id = randomUUID();
   const job: JobStatus = {
     id,
@@ -76,7 +86,7 @@ async function runJob(job: JobStatus, site: URL, input: AnalyzeInput): Promise<v
   const report: Report = {
     id: job.id,
     createdAt: new Date().toISOString(),
-    input: { url: site.toString(), policyUrl: input.policyUrl, pastedPolicy: Boolean(input.policyText) },
+    input: { url: site.toString(), policyUrl: input.policyUrl ?? input.page?.url, pastedPolicy: Boolean(input.policyText) },
     site: site.hostname,
     comparisons: [],
     limitations: LIMITATIONS,
@@ -117,6 +127,18 @@ async function runJob(job: JobStatus, site: URL, input: AnalyzeInput): Promise<v
       try {
         extracted = await time("policy_fetch", async () => {
           if (input.policyText) return policyFromText(input.policyText);
+          if (input.page) {
+            // The extension sent the page the user is reading. Use it when it is the
+            // policy; otherwise follow the policy links found on that page.
+            const fromPage = tryPolicyFromBlocks(input.page.blocks, { url: input.page.url, title: input.page.title });
+            if (fromPage && looksLikePolicy(fromPage)) {
+              setStep(job, "policy_fetch", "running", "Using the policy open in your tab");
+              return fromPage;
+            }
+            setStep(job, "policy_fetch", "running", "This page isn't the policy; following its privacy link");
+            const homeLinks = (await links).privacyPolicy;
+            return findPolicy(site, [...input.page.policyLinks.filter(isHttpUrl), ...homeLinks], (d) => setStep(job, "policy_fetch", "running", d));
+          }
           if (input.policyUrl) {
             const u = normalizeUrl(input.policyUrl);
             await assertPublicUrl(u);
@@ -133,14 +155,12 @@ async function runJob(job: JobStatus, site: URL, input: AnalyzeInput): Promise<v
       }
       setStep(job, "policy_fetch", "done", `${extracted.blocks.length} sections${extracted.url ? ` from ${new URL(extracted.url).pathname}` : ""}`);
 
-      if (!hasApiKey()) {
-        report.policyError = "Policy analysis is off because ANTHROPIC_API_KEY isn't set on the server.";
-        setStep(job, "policy_analyze", "skipped", report.policyError);
-        return undefined;
-      }
       setStep(job, "policy_analyze", "running");
       try {
-        const analysis = await time("policy_analyze", () => analyzePolicy(extracted, { site: site.hostname, pasted: Boolean(input.policyText) }));
+        const pasted = Boolean(input.policyText);
+        const analysis = await time("policy_analyze", async () =>
+          policyReader() === "claude" ? analyzePolicy(extracted, { site: site.hostname, pasted }) : readPolicyWithRules(extracted, { pasted }),
+        );
         setStep(job, "policy_analyze", "done", `${analysis.evidence.verified} of ${analysis.evidence.proposed} quotes found word for word in the policy`);
         return analysis;
       } catch (err) {
@@ -167,6 +187,10 @@ async function runJob(job: JobStatus, site: URL, input: AnalyzeInput): Promise<v
     job.error = err instanceof UnsafeUrlError ? err.message : `Something went wrong: ${err instanceof Error ? err.message : err}`;
     for (const s of job.steps) if (s.state === "running" || s.state === "pending") s.state = s.state === "running" ? "failed" : "skipped";
   }
+}
+
+function isHttpUrl(s: string): boolean {
+  return /^https?:\/\//i.test(s);
 }
 
 async function findPolicy(site: URL, candidates: string[], onProgress: (d: string) => void): Promise<ExtractedPolicy> {
