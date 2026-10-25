@@ -141,6 +141,16 @@ function compareDnt(claim: PolicyClaim, audit: BrowserAudit | undefined): Compar
   return { ...base(claim, audit), verdict: claim.value === "unspecified" ? "not_stated" : "not_testable", headline: claim.value === "yes" ? "The policy says it respects Do Not Track" : claim.value === "no" ? "The policy says it ignores Do Not Track" : "The policy doesn't mention Do Not Track", explanation: "This audit doesn't send the Do Not Track signal, so the claim wasn't tested.", caveats: [] };
 }
 
+function compareAiTraining(claim: PolicyClaim, audit: BrowserAudit | undefined): Comparison {
+  return {
+    ...base(claim, audit),
+    verdict: claim.value === "unspecified" ? "not_stated" : "not_testable",
+    headline: claim.value === "yes" ? "The policy says your data may train AI" : claim.value === "no" ? "The policy says your data isn't used to train AI" : "The policy doesn't say whether your data trains AI",
+    explanation: "A browser can't see how a company uses data once it has it, so this claim wasn't tested. It rests on the policy's own words.",
+    caveats: [],
+  };
+}
+
 const RULES: Record<ClaimKey, (c: PolicyClaim, a: BrowserAudit | undefined) => Comparison> = {
   honors_gpc: compareGpc,
   uses_third_party_trackers: compareThirdPartyTracking,
@@ -148,6 +158,7 @@ const RULES: Record<ClaimKey, (c: PolicyClaim, a: BrowserAudit | undefined) => C
   shares_for_targeted_ads: compareSaleOrSharing,
   sells_personal_info: compareSaleOrSharing,
   respects_dnt: compareDnt,
+  uses_data_for_ai_training: compareAiTraining,
 };
 
 const ORDER: Verdict[] = ["possible_gap", "consistent", "not_stated", "not_testable", "inconclusive"];

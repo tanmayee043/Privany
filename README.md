@@ -55,6 +55,12 @@ Open a site's privacy policy, for example https://duckduckgo.com/privacy, and cl
 
 The web app at http://localhost:5173 does the same from a pasted address, and lists recent checks.
 
+### Your no-goes
+
+Pick dealbreakers once from a fixed menu (for example "Don't sell my data", "Must honor my opt-out signal (GPC)", "No tracking before I agree"). Every report then opens with a summary such as "Breaks 2 of your 5 no-goes", each backed by the policy's own quote and/or the cookies the test saw. Each no-go is one of three outcomes: **breaks your no-go**, **doesn't break it**, or **policy doesn't say**. Silence is never counted as breaking one, except for the "must say" rules (retention) or when you turn on **Be strict**.
+
+Your choices are stored on your device only and are never sent to the server: `chrome.storage.sync` in the extension (key `privany.nogos.v1`, synced by Chrome if you're signed in) and `localStorage` in the web app. The rules are evaluated in the browser by `web/src/nogos.ts`. The side panel asks for them on first use; use "Edit my no-goes" afterwards.
+
 ### Settings
 
 Optional; copy `.env.example` to `.env`:
