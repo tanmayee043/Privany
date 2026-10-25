@@ -19,9 +19,15 @@ chrome.runtime.onMessage.addListener((msg: { type?: string; tabId?: number }) =>
   if (msg.type === "privany:recheck" && typeof msg.tabId === "number") void startCheck(msg.tabId);
 });
 
-// A new page in the tab gets a fresh check on the next click.
+// Moving the tab to a different site clears its result; reloads and in-site
+// navigation (which many sites do on their own) keep it.
 chrome.tabs.onUpdated.addListener((tabId, info) => {
-  if (info.status === "loading" && info.url) void chrome.storage.session.remove(key(tabId));
+  if (!info.url) return;
+  const host = siteOf(info.url)?.hostname;
+  void chrome.storage.session.get(key(tabId)).then((r) => {
+    const state = r[key(tabId)] as TabState | undefined;
+    if (state && "site" in state && state.site && host !== state.site) void chrome.storage.session.remove(key(tabId));
+  });
 });
 chrome.tabs.onRemoved.addListener((tabId) => void chrome.storage.session.remove(key(tabId)));
 

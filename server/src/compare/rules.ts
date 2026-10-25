@@ -10,7 +10,7 @@ import { isTracking } from "../audit/cookies.js";
 
 const COMMON_CAVEATS = [
   "Cookies are only one way to track. Fingerprinting, server-side sharing and tracking pixels without cookies aren't measured.",
-  "Only the homepage was visited, without logging in, scrolling, or clicking anything.",
+  "We visited the homepage and one other page, scrolling through each, but didn't log in or click anything. Clicking can load more ads and trackers, so real numbers may be higher.",
 ];
 
 const GPC_CAVEATS = [

@@ -90,7 +90,13 @@ function parsePage(value: unknown): AnalyzeInput["page"] | null {
 }
 
 const port = Number(process.env.PORT ?? 8787);
-const server = app.listen(port, "127.0.0.1", () => {
+// Express 5 calls this with an error when listening fails (for example, the port is taken).
+const server = app.listen(port, "127.0.0.1", (err?: Error) => {
+  if (err) {
+    const busy = (err as NodeJS.ErrnoException).code === "EADDRINUSE";
+    console.error(busy ? `Port ${port} is already in use; another Privany server may be running. Stop it, then start this one again.` : `Couldn't start the API: ${err.message}`);
+    process.exit(1);
+  }
   console.log(`Privany API on http://127.0.0.1:${port} (policy reader: ${policyReader() === "claude" ? "Claude" : "free rule-based"})`);
 });
 

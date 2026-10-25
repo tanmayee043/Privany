@@ -106,6 +106,8 @@ export interface AuditRun {
   finalUrl?: string;
   /** Navigation hit the timeout; cookies are what had loaded by then. */
   partial: boolean;
+  /** Pages loaded in this visit: the homepage, then usually one inner page of the same site. */
+  pagesVisited?: string[];
   durationMs: number;
   cookies: ObservedCookie[];
   thirdPartyHosts: string[];
@@ -130,6 +132,8 @@ export interface ConfigSummary {
   /** Cookies written in every successful run of this configuration. */
   stableCookies: ObservedCookie[];
   stable: CookieTotals;
+  /** Outside domains the pages contacted on every successful run (includes CDNs, not only trackers). */
+  stableHosts?: string[];
 }
 
 export interface BrowserAudit {

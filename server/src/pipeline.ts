@@ -36,7 +36,7 @@ export function policyReader(): "claude" | "rules" {
 
 const LIMITATIONS = [
   "Privany compares what a policy says with what a browser can observe. It doesn't prove what a company does with data on its servers, and it isn't legal advice.",
-  "The browser test loads only the homepage, without logging in, scrolling or clicking, from the server's location.",
+  "The browser test loads the homepage and one other page of the site and scrolls through both, from the server's location. It never logs in or clicks: clicks on some sites trigger pop-ups or downloads, so tracking that starts only after a click isn't measured.",
   "Cookie purposes come from the Open Cookie Database; cookies it doesn't list are shown as unidentified rather than guessed.",
 ];
 

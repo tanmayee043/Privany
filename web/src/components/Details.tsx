@@ -149,7 +149,11 @@ export function HowTested({ report }: { report: Report }) {
   const facts: [string, string][] = [];
   if (a) {
     facts.push(["Browser", `${a.browserVersion}, a fresh profile for every visit`]);
-    facts.push(["Visits", `${a.runs.length} to the homepage, alternating default and GPC on; ${a.runs.filter((r) => !r.ok).length || "none"} failed`]);
+    facts.push(["Visits", `${a.runs.length}, alternating default and GPC on; ${a.runs.filter((r) => !r.ok).length || "none"} failed`]);
+    const pages = a.runs.find((r) => r.ok)?.pagesVisited;
+    if (pages?.length) facts.push(["Pages loaded each visit", `${pages.map((u) => new URL(u).pathname).join(" then ")}, each scrolled to the bottom; nothing clicked, downloads and pop-ups blocked`]);
+    const hosts = a.summary.baseline?.stableHosts;
+    if (hosts) facts.push(["Outside domains contacted", hosts.length ? `${hosts.length} on every default visit, including content delivery networks: ${hosts.slice(0, 12).join(", ")}${hosts.length > 12 ? "…" : ""}` : "None"]);
     facts.push(["GPC signal", "Sec-GPC: 1 header and navigator.globalPrivacyControl, as in PrivAudit (ACM CCS 2026)"]);
     facts.push(["Consent banner", a.consentBanner.detected ? `Shown${a.consentBanner.vendor ? ` (${a.consentBanner.vendor})` : ""}; we didn't click it` : "None detected"]);
     facts.push(["gpc.json", a.gpcJson.found ? (a.gpcJson.gpc ? "Published, declares GPC support" : "Published, doesn't declare support") : "Not published"]);

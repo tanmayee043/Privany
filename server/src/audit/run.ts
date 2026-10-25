@@ -17,8 +17,9 @@ const CONFIGS: { key: AuditConfigKey; label: string; gpc: boolean }[] = [
   { key: "gpc", label: "Global Privacy Control on", gpc: true },
 ];
 
-const NAV_TIMEOUT_MS = 45_000;
-const SETTLE_MS = 3_000;
+// Ad-heavy pages rarely go quiet; after this long we keep what has loaded and mark the run partial.
+const NAV_TIMEOUT_MS = 25_000;
+const SETTLE_MS = 2_500;
 // Ad auctions make every page load different, so one visit per configuration
 // can't separate the effect of GPC from chance. Each configuration is loaded
 // this many times and verdicts rely on cookies seen in every one of its runs.
@@ -86,14 +87,26 @@ async function discoverOnPage(page: Page): Promise<Discovery> {
   });
 }
 
-async function runConfig(site: URL, cfg: (typeof CONFIGS)[number], repeat: number, wantDiscovery: boolean): Promise<{ run: AuditRun; discovery?: Discovery }> {
+async function runConfig(
+  site: URL,
+  cfg: (typeof CONFIGS)[number],
+  repeat: number,
+  wantDiscovery: boolean,
+  innerUrl: string | undefined,
+): Promise<{ run: AuditRun; discovery?: Discovery; inner?: string }> {
   const browser = await getBrowser();
   const context = await browser.createBrowserContext();
   const started = Date.now();
   const hosts = new Set<string>();
   const siteDomain = registrableDomain(site.hostname);
+  // Nothing is clicked, but a page can still try to open windows on its own;
+  // close any it opens so they can't run further code.
+  context.on("targetcreated", (t) => {
+    if (t.type() === "page" && t.opener()) void t.page().then((p) => p?.close()).catch(() => {});
+  });
   try {
     const page = await context.newPage();
+    await blockDownloads(page);
     await preparePage(page, (h) => {
       if (registrableDomain(h) !== siteDomain) hosts.add(h);
     });
@@ -103,21 +116,29 @@ async function runConfig(site: URL, cfg: (typeof CONFIGS)[number], repeat: numbe
         Object.defineProperty(Navigator.prototype, "globalPrivacyControl", { get: () => true, configurable: true });
       });
     }
-    let partial = false;
-    try {
-      await page.goto(site.toString(), { waitUntil: "networkidle2", timeout: NAV_TIMEOUT_MS });
-    } catch (err) {
-      if (!(err instanceof Error && err.name === "TimeoutError")) throw err;
-      partial = true;
-    }
+    let partial = !(await load(page, site.toString()));
     await new Promise((r) => setTimeout(r, SETTLE_MS));
     const finalUrl = page.url();
+    const discovery = wantDiscovery ? await discoverOnPage(page).catch(() => undefined) : undefined;
+    await scrollThrough(page);
+
+    // Then one inner page of the same site, the way PrivAudit's inner_page step
+    // looks past the homepage. Every run opens the same page so runs stay comparable.
+    const pagesVisited = [finalUrl];
+    const inner = innerUrl ?? (await pickInnerPage(page, registrableDomain(new URL(finalUrl).hostname)).catch(() => undefined));
+    if (inner) {
+      partial = !(await load(page, inner)) || partial;
+      await new Promise((r) => setTimeout(r, SETTLE_MS));
+      await scrollThrough(page);
+      pagesVisited.push(page.url());
+    }
+
     const raw = await context.cookies();
     const cookies = raw.map((c) => classifyCookie({ name: c.name, value: c.value, domain: c.domain, expires: c.expires, session: c.session }, new URL(finalUrl).hostname));
-    const discovery = wantDiscovery ? await discoverOnPage(page).catch(() => undefined) : undefined;
     return {
-      run: { config: cfg.key, repeat, label: cfg.label, ok: true, finalUrl, partial, durationMs: Date.now() - started, cookies, thirdPartyHosts: [...hosts].sort() },
+      run: { config: cfg.key, repeat, label: cfg.label, ok: true, finalUrl, partial, pagesVisited, durationMs: Date.now() - started, cookies, thirdPartyHosts: [...hosts].sort() },
       discovery,
+      inner,
     };
   } catch (err) {
     return {
@@ -126,6 +147,72 @@ async function runConfig(site: URL, cfg: (typeof CONFIGS)[number], repeat: numbe
   } finally {
     await context.close().catch(() => {});
   }
+}
+
+/** Loads a URL; false when it hit the timeout (what loaded so far still counts). */
+async function load(page: Page, url: string): Promise<boolean> {
+  try {
+    await page.goto(url, { waitUntil: "networkidle2", timeout: NAV_TIMEOUT_MS });
+    return true;
+  } catch (err) {
+    if (err instanceof Error && err.name === "TimeoutError") return false;
+    throw err;
+  }
+}
+
+async function blockDownloads(page: Page): Promise<void> {
+  try {
+    const cdp = await page.createCDPSession();
+    await cdp.send("Page.setDownloadBehavior", { behavior: "deny" });
+  } catch {
+    // Not supported by this Chrome; navigation is still limited to public web pages.
+  }
+}
+
+/** Scrolls to the bottom in steps, since many ads and trackers load only when scrolled into view. */
+async function scrollThrough(page: Page): Promise<void> {
+  await page
+    .evaluate(async () => {
+      for (let i = 0; i < 10; i++) {
+        window.scrollBy(0, Math.round(window.innerHeight * 0.9));
+        await new Promise((r) => setTimeout(r, 350));
+        if (window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 2) break;
+      }
+    })
+    .catch(() => {});
+  await new Promise((r) => setTimeout(r, 1_500));
+}
+
+/** Picks a content page on the same site: a same-domain link with real text, skipping account, legal and file links. */
+async function pickInnerPage(page: Page, siteDomain: string): Promise<string | undefined> {
+  return page.evaluate((domain) => {
+    const skip = /privacy|terms|legal|cookie|login|log-in|signin|sign-in|signup|sign-up|register|account|logout|cart|checkout|subscribe|download|contact|careers|jobs|help|support|faq/i;
+    const fileLink = /\.(pdf|zip|exe|dmg|apk|msi|rar|7z|jpe?g|png|gif|mp4|mp3|avi|mkv|torrent)$/i;
+    const here = location.href.split("#")[0];
+    const candidates: { href: string; score: number }[] = [];
+    for (const a of Array.from(document.querySelectorAll("a[href]")) as HTMLAnchorElement[]) {
+      let u: URL;
+      try {
+        u = new URL(a.href);
+      } catch {
+        continue;
+      }
+      const host = u.hostname.toLowerCase();
+      if (!/^https?:$/.test(u.protocol) || !(host === domain || host.endsWith(`.${domain}`))) continue;
+      const href = u.href.split("#")[0];
+      if (u.pathname === "/" || href === here || skip.test(href) || fileLink.test(u.pathname)) continue;
+      const rect = a.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) continue;
+      const text = (a.innerText || "").trim();
+      let score = Math.min(text.length, 80);
+      if (a.closest("main, article, [role=main]")) score += 40;
+      if (a.closest("nav, header, footer")) score -= 40;
+      if (u.pathname.split("/").filter(Boolean).length >= 2) score += 10;
+      candidates.push({ href, score });
+    }
+    candidates.sort((x, y) => y.score - x.score);
+    return candidates[0]?.href;
+  }, siteDomain);
 }
 
 function describeNavError(err: unknown): string {
@@ -160,20 +247,22 @@ export async function runBrowserAudit(site: URL, hooks: AuditHooks = {}): Promis
   const gpcJson = checkGpcJson(site);
   const runs: AuditRun[] = [];
   let discovery: Discovery | undefined;
-  // Runs alternate between configurations (baseline, GPC, baseline, GPC) so a
-  // change in the site over the test window affects both equally. They run one
-  // at a time so they don't compete for bandwidth; PrivAudit also visits each
-  // profile in turn.
+  let inner: string | undefined;
+  // Each round visits with and without GPC at the same time, in separate fresh
+  // profiles, so both see the site at the same moment (same ads in rotation)
+  // and a check takes half as long. Later rounds reuse the inner page picked in
+  // the first round's default visit so every visit loads the same pages.
   for (let repeat = 1; repeat <= REPEATS; repeat++) {
-    for (const cfg of CONFIGS) {
-      hooks.onProgress?.(`${cfg.label} (visit ${repeat} of ${REPEATS})`);
-      const result = await runConfig(site, cfg, repeat, cfg.key === "baseline" && !discovery);
+    hooks.onProgress?.(`Visit ${repeat} of ${REPEATS}, with and without GPC side by side`);
+    const results = await Promise.all(CONFIGS.map((cfg) => runConfig(site, cfg, repeat, cfg.key === "baseline" && !discovery, inner)));
+    for (const result of results) {
       runs.push(result.run);
       if (result.discovery && !discovery) {
         discovery = result.discovery;
         hooks.onDiscovery?.({ privacyPolicy: discovery.privacyPolicy, optOut: discovery.optOut });
       }
     }
+    inner ??= results[0].inner;
   }
   if (!discovery) hooks.onDiscovery?.({ privacyPolicy: [], optOut: [] });
   const summary: BrowserAudit["summary"] = {};
@@ -204,5 +293,6 @@ function summarize(config: AuditConfigKey, label: string, runs: AuditRun[]): Con
   const key = (c: { name: string; domain: string }) => `${c.name}@${c.domain}`;
   const inAll = ok.slice(1).map((r) => new Set(r.cookies.map(key)));
   const stableCookies = ok[0].cookies.filter((c) => inAll.every((set) => set.has(key(c))));
-  return { config, label, runs: runs.length, okRuns: ok.length, min: fold(Math.min), max: fold(Math.max), stableCookies, stable: totals(stableCookies) };
+  const stableHosts = ok[0].thirdPartyHosts.filter((h) => ok.every((r) => r.thirdPartyHosts.includes(h)));
+  return { config, label, runs: runs.length, okRuns: ok.length, min: fold(Math.min), max: fold(Math.max), stableCookies, stable: totals(stableCookies), stableHosts };
 }

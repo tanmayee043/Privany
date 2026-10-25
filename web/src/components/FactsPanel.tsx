@@ -6,6 +6,16 @@ export function FactsPanel({ report, ranked, selected, onSelect }: { report: Rep
   const policy = report.policy;
   const gaps = ranked.filter((c) => c.verdict === "possible_gap").length;
   const outsideGpc = s?.gpc?.stableCookies.filter((c) => c.thirdParty && (c.category === "advertising" || c.category === "analytics")).length;
+  // "None contradicted" reads as good news; when the policy promises nothing, say that instead.
+  const promisesNothing = ranked.length > 0 && ranked.every((c) => c.verdict === "not_stated");
+  const summary = gaps
+    ? `${gaps} need${gaps === 1 ? "s" : ""} a closer look.`
+    : promisesNothing
+      ? "This policy makes no clear promises on any of these, so there's nothing to hold the site to."
+      : "None contradicted by what we saw.";
+  // Every default visit is made without touching any banner, so these cookies came before any agreement.
+  const beforeConsent = s?.baseline ? s.baseline.stable.advertising + s.baseline.stable.analytics : 0;
+  const outsideDomains = s?.baseline?.stableHosts?.length;
 
   return (
     <section aria-labelledby="panel-title" className="border-2 border-ink bg-paper px-5 pb-4 pt-3.5 sm:px-6">
@@ -15,6 +25,12 @@ export function FactsPanel({ report, ranked, selected, onSelect }: { report: Rep
       <p className="pb-2 pt-1.5 text-[14px] text-ink-2">
         <strong className="text-ink">{siteName(report.site)}</strong> · checked {formatDate(report.createdAt)}
       </p>
+      {beforeConsent > 0 && (
+        <p className="mb-2 bg-ground px-3 py-2.5 text-[15px] font-bold leading-snug">
+          {beforeConsent} tracking cookie{beforeConsent === 1 ? " was" : "s were"} set before you agreed to anything.
+          <span className="mt-0.5 block text-[13px] font-normal text-ink-2">Seen on every default visit, without clicking any banner.</span>
+        </p>
+      )}
 
       <div className="rule-bar flex items-baseline justify-between pt-1.5">
         <span className="text-[14px] font-bold">Promises checked</span>
@@ -23,7 +39,7 @@ export function FactsPanel({ report, ranked, selected, onSelect }: { report: Rep
       {policy ? (
         <>
           <p className="pb-1 text-[13px] text-ink-2">
-            {gaps ? `${gaps} need${gaps === 1 ? "s" : ""} a closer look.` : "None contradicted by what we saw."} Ordered by what matters to you.
+            {summary} Ordered by what matters to you.
           </p>
           <ul className="rule-div" aria-label="Promises and results">
             {ranked.map((c) => {
@@ -60,6 +76,7 @@ export function FactsPanel({ report, ranked, selected, onSelect }: { report: Rep
           <Row label="Default browser" value={s.baseline ? s.baseline.stable.advertising + s.baseline.stable.analytics : undefined} />
           <Row label="With GPC on" value={s.gpc ? s.gpc.stable.advertising + s.gpc.stable.analytics : undefined} />
           <Row label="From outside companies, GPC on" value={outsideGpc} indent />
+          {outsideDomains !== undefined && <Row label="Outside domains contacted, every visit" value={outsideDomains} />}
         </dl>
       ) : (
         <p className="rule-line py-2 text-[14px] text-ink-2">{report.auditError ?? "The browser test didn't run."}</p>
@@ -67,7 +84,7 @@ export function FactsPanel({ report, ranked, selected, onSelect }: { report: Rep
 
       <p className="rule-div mt-0.5 pt-2 text-[12px] leading-snug text-ink-2">
         {policy && `${policy.evidence.verified} of ${policy.evidence.proposed} quotes found word for word in the policy; the rest were discarded. `}
-        Homepage only, no clicks. A possible gap is a reason to look closer, not proof of wrongdoing.
+        {(report.audit?.runs[0]?.pagesVisited?.length ?? 1) > 1 ? "Homepage and one inner page, scrolled, no clicks." : "Homepage only, no clicks."} A possible gap is a reason to look closer, not proof of wrongdoing.
       </p>
     </section>
   );

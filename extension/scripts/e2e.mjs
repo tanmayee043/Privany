@@ -33,15 +33,17 @@ try {
   let state;
   for (;;) {
     state = await worker.evaluate(async (id) => (await chrome.storage.session.get(`tab:${id}`))[`tab:${id}`], tabId);
+    if (process.env.E2E_DEBUG) console.log(Math.round((Date.now() - started) / 1000), JSON.stringify(state));
     if (state?.phase === "error") break;
     if (state?.phase === "running") {
       const job = await (await fetch(`http://127.0.0.1:8787/api/jobs/${state.jobId}`)).json();
+      if (process.env.E2E_DEBUG) console.log("   job", job.state ?? job.error, (job.steps ?? []).map((s) => s.state[0]).join(""));
       if (job.state === "done" || job.state === "failed") {
         console.log(job.steps.map((s) => `${s.state.padEnd(7)} ${s.label}${s.detail ? ` (${s.detail})` : ""}`).join("\n"));
         break;
       }
     }
-    if (Date.now() - started > 240_000) throw new Error("timed out");
+    if (Date.now() - started > 360_000) throw new Error("timed out");
     await new Promise((r) => setTimeout(r, 2000));
   }
   console.log(`state: ${JSON.stringify(state)} after ${Math.round((Date.now() - started) / 1000)}s`);

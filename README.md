@@ -86,11 +86,14 @@ Chrome extension (side panel)          web app (localhost:5173)
          ┌────────────────────┼─────────────────────────┐
          ▼                    ▼                         ▼
   audit/run.ts         policy/extract.ts          policy/rules.ts (free, default)
-  4 homepage visits:   uses the tab's text if      or policy/analyze.ts (Claude)
-  default, GPC,        it's the policy; else       → promises + quotes
-  default, GPC;        follows privacy links       policy/verify.ts keeps only
-  every cookie                                     quotes found word for word
-  labeled (cookies.ts)
+  4 visits: default,   uses the tab's text if      or policy/analyze.ts (Claude)
+  GPC, default, GPC;   it's the policy; else       → promises + quotes
+  each loads the       follows privacy links       policy/verify.ts keeps only
+  homepage + 1 inner                               quotes found word for word
+  page, scrolled; no
+  clicks; cookies and
+  outside domains
+  recorded
          └────────────────────┬─────────────────────────┘
                               ▼
                       compare/rules.ts

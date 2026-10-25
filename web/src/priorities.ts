@@ -67,18 +67,29 @@ export interface NextStep {
   priority: PriorityKey;
 }
 
-function optOutFor(report: Report, re: RegExp): OptOut | undefined {
-  return report.policy?.optOuts.find((o) => re.test(`${o.label} ${o.detail}`));
+/**
+ * Finds an opt-out of the given kinds whose policy sentence matches. Matching
+ * the quoted sentence (not our own label) and leaving out browser cookie
+ * controls keeps "delete cookies in your browser" from passing as a way to
+ * have the company delete your data.
+ */
+function optOutFor(report: Report, kinds: OptOut["kind"][], re: RegExp, unless?: RegExp): OptOut | undefined {
+  return report.policy?.optOuts.find((o) => {
+    const said = o.quotes.map((q) => q.text).join(" ");
+    return kinds.includes(o.kind) && re.test(said) && !(unless && unless.test(said));
+  });
 }
+
+const REQUEST_ROUTES: OptOut["kind"][] = ["email", "form", "link", "phone"];
 
 /** Builds next steps from the policy's documented choices first, then general, clearly labeled tips. */
 export function nextSteps(report: Report, p: Priorities): NextStep[] {
   const steps: NextStep[] = [];
   const gap = (k: ClaimKey) => report.comparisons.find((c) => c.key === k)?.verdict === "possible_gap";
-  const saleOptOut = optOutFor(report, /sell|share|opt.?out|privacy choices|targeted|advertis/i);
-  const deletion = optOutFor(report, /delet|eras/i);
-  const cookieSettings = optOutFor(report, /cookie|consent|preference/i);
-  const aiOptOut = optOutFor(report, /\bai\b|artificial|machine learning|model|train/i);
+  const saleOptOut = optOutFor(report, [...REQUEST_ROUTES, "browser_signal"], /\bsell|\bsale\b|\bshar(e|ing)\b|opt[- ]?out|privacy choices|targeted|advertis/i);
+  const deletion = optOutFor(report, REQUEST_ROUTES, /delet|eras/i, /\bcookies?\b.{0,40}\bdelet|delet\w*.{0,40}\bcookies?\b|browser settings/i);
+  const cookieSettings = optOutFor(report, ["setting"], /cookie|consent|preference/i);
+  const aiOptOut = optOutFor(report, REQUEST_ROUTES.concat("setting"), /\bAI\b|artificial intelligence|machine learning|train/i);
 
   if (p.sale > 0 || p.ads > 0) {
     if (saleOptOut) {
