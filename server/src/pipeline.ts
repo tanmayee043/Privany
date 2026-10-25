@@ -43,7 +43,25 @@ const LIMITATIONS = [
 ];
 
 const jobs = new Map<string, JobStatus>();
-let queue: Promise<unknown> = Promise.resolve();
+
+// Checks run CONCURRENCY at a time (default 1: parallel audits compete for
+// bandwidth, which makes cookie counts less comparable). Raise it on a
+// machine with the memory and bandwidth to spare, e.g. a shared deployment.
+const CONCURRENCY = Math.max(1, Math.min(8, Number(process.env.PRIVANY_CONCURRENCY ?? 1)));
+let active = 0;
+const waiting: (() => void)[] = [];
+async function acquireSlot(): Promise<void> {
+  if (active < CONCURRENCY) {
+    active++;
+    return;
+  }
+  await new Promise<void>((resolve) => waiting.push(resolve));
+}
+function releaseSlot(): void {
+  const next = waiting.shift();
+  if (next) next(); // hand the slot straight to the next job
+  else active--;
+}
 
 // Limits are env-tunable so a shared deployment can be stricter than a laptop.
 const MAX_PENDING_JOBS = Math.max(1, Number(process.env.PRIVANY_MAX_QUEUE ?? 5));
@@ -100,18 +118,20 @@ export function startJob(input: AnalyzeInput, opts: { fresh?: boolean } = {}): J
   const id = randomUUID();
   const job: JobStatus = { id, state: "queued", steps: stepsFor("pending") };
   jobs.set(id, job);
-  // One analysis at a time: parallel audits would compete for bandwidth and
-  // make cookie counts less comparable. A job that outruns its time limit is
+  // A job that outruns its time limit is
   // failed so it can't hold up everything queued behind it.
-  queue = queue
-    .then(() => withTimeout(runJob(job, site, input), JOB_TIMEOUT_MS, "This check took too long and was stopped. The site may be slow or blocking automated visits."))
-    .then(() => {
+  void (async () => {
+    await acquireSlot();
+    try {
+      await withTimeout(runJob(job, site, input), JOB_TIMEOUT_MS, "This check took too long and was stopped. The site may be slow or blocking automated visits.");
       if (job.state === "done" && job.reportId) recent.set(key, { reportId: job.reportId, at: Date.now() });
-    })
-    .catch((err) => {
+    } catch (err) {
       if (err instanceof JobTimeoutError) failJob(job, err.message);
-    })
-    .finally(() => expireJob(id));
+    } finally {
+      releaseSlot();
+      expireJob(id);
+    }
+  })();
   return job;
 }
 

@@ -15,6 +15,12 @@ try {
 
 const app = express();
 app.disable("x-powered-by");
+// Behind a reverse proxy every request arrives from the proxy's address, so
+// all users would share one rate limit. Set PRIVANY_TRUST_PROXY to the number
+// of proxy hops (e.g. 1) or a Express trust-proxy value to use the real client IP.
+const trustProxy = process.env.PRIVANY_TRUST_PROXY;
+if (trustProxy) app.set("trust proxy", /^\d+$/.test(trustProxy) ? Number(trustProxy) : trustProxy);
+const perMinute = (name: string, fallback: number) => Math.max(1, Number(process.env[name] ?? fallback) || fallback);
 app.use(express.json({ limit: "4mb" }));
 
 app.get("/api/health", (_req, res) => {
@@ -22,7 +28,7 @@ app.get("/api/health", (_req, res) => {
 });
 
 // Starting a check is expensive (four browser visits); reads are cheap.
-app.post("/api/analyze", rateLimit({ windowMs: 60_000, max: 10 }), (req, res) => {
+app.post("/api/analyze", rateLimit({ windowMs: 60_000, max: perMinute("PRIVANY_RATE_LIMIT_PER_MIN", 10) }), (req, res) => {
   const { url, policyUrl, policyText, page, fresh } = (req.body ?? {}) as Record<string, unknown>;
   if (typeof url !== "string") {
     res.status(400).json({ error: "Enter a website address." });
@@ -55,7 +61,7 @@ app.post("/api/analyze", rateLimit({ windowMs: 60_000, max: 10 }), (req, res) =>
   }
 });
 
-app.get("/api/jobs/:id", rateLimit({ windowMs: 60_000, max: 600 }), (req, res) => {
+app.get("/api/jobs/:id", rateLimit({ windowMs: 60_000, max: perMinute("PRIVANY_POLL_LIMIT_PER_MIN", 600) }), (req, res) => {
   const job = getJob(String(req.params.id));
   if (!job) {
     res.status(404).json({ error: "That check isn't running any more. Start a new one." });
