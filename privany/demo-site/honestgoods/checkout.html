@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en" data-mode="good">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Checkout · Honest Goods</title>
+<link rel="stylesheet" href="/shared/style.css">
+<link rel="privacy-policy" href="/privacy.html">
+<link rel="terms-of-service" href="/terms.html">
+</head>
+<body>
+<header>
+  <a class="logo" href="/">Honest Goods</a>
+  <nav><a href="/">Shop</a><a href="/signup.html">Sign up</a><a href="/upload.html">Style Match</a><a href="/checkout.html">Cart</a></nav>
+</header>
+<main>
+<div class="demo-note">Demo shop for Privany. Honest Goods is fictional and behaves the way its policy says. <a href="#" id="reset-demo">Reset demo</a></div>
+
+<h1>Checkout</h1><p class="lead">2 items · $80.00</p>
+<form data-demo id="checkout-form">
+  <label for="cc">Card number</label><input type="text" id="cc" name="cardnumber" autocomplete="cc-number" inputmode="numeric" placeholder="4242 4242 4242 4242">
+  <label for="exp">Expiry</label><input type="text" id="exp" name="exp" autocomplete="cc-exp" placeholder="MM/YY">
+  <label for="ship">Shipping address</label><input type="text" id="ship" name="ship" autocomplete="shipping street-address">
+  
+  <label class="check"><input type="checkbox" name="agree"> I agree to the <a href="/terms.html">Terms of Service</a></label>
+  <p><button class="btn" type="submit">Place order</button></p>
+  <div class="form-result"></div>
+</form>
+</main>
+<footer>
+  <span>© 2026 Honest Goods (fictional)</span>
+  <a href="/privacy.html">Privacy Policy</a>
+  <a href="/terms.html">Terms of Service</a>
+  
+  <a href="/privacy.html#choices">Your Privacy Choices</a>
+</footer>
+<div id="cookie-consent-banner" class="cookie-banner" hidden>
+  <p>We use cookies to improve your experience and show you relevant ads. See our <a href="/privacy.html">Privacy Policy</a>.</p>
+  <button class='btn ghost' data-consent='rejected'>Reject all</button><button class='btn' data-consent='accepted'>Accept all</button>
+</div>
+<script src="/shared/site.js"></script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+/* Lives inside closed shadow roots, so it can't leak into or be broken by the page.
+   Built with preflight off: @tailwind base only adds the --tw-* variable defaults. */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:host, div, section, button, ul, li, p, h2, figure, blockquote, header, footer, a, span {
+  box-sizing: border-box;
+}
+/* the one piece of Tailwind's reset we need: without it, border utilities draw nothing */
+*, ::before, ::after { border-width: 0; border-style: solid; border-color: currentColor; }
+button { font: inherit; background: none; cursor: pointer; margin: 0; }
+h2, p, ul, figure, blockquote { margin: 0; }
+a { color: inherit; }
+@keyframes drain { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+@media (prefers-reduced-motion: reduce) {
+  .animate-rise { animation: none !important; }
+  [style*="drain"] { animation: none !important; }
+}

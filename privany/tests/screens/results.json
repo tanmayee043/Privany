@@ -1,0 +1,132 @@
+[
+ [
+  "extension loaded",
+  true,
+  "elniglgkpaffjldcjpjonbjmfphehbdi"
+ ],
+ [
+  "policy analyzed",
+  true,
+  ""
+ ],
+ [
+  "verdict is red",
+  true,
+  "3 places where what they say and what they do don't line up."
+ ],
+ [
+  "GPC test ran automatically (policy claims GPC)",
+  true,
+  ""
+ ],
+ [
+  "gap: says honors GPC, tracking unchanged",
+  true,
+  ""
+ ],
+ [
+  "gap: says doesn't sell, ad platforms present",
+  true,
+  ""
+ ],
+ [
+  "gap: ad tracking before banner answered",
+  true,
+  ""
+ ],
+ [
+  "saw ad cookies live in the browser",
+  true,
+  "_fbp, _ga, _gcl_au, session_id"
+ ],
+ [
+  "toolbar badge shows high-severity count",
+  true,
+  "'5'"
+ ],
+ [
+  "reject check: broken",
+  true,
+  "After you hit Reject, 2 new ad cookies were set."
+ ],
+ [
+  "signup: inline hints attached",
+  true,
+  "3 Privany elements on page"
+ ],
+ [
+  "agree gate: 'I agree' paused on a risky site",
+  true,
+  ""
+ ],
+ [
+  "agree gate: 'Agree anyway' goes through",
+  true,
+  ""
+ ],
+ [
+  "consent receipt saved on 'I agree'",
+  true,
+  "1 receipt(s), 3 docs"
+ ],
+ [
+  "Say vs Do shows \u2260 marks",
+  true,
+  ""
+ ],
+ [
+  "receipt diff: unchanged",
+  true,
+  ""
+ ],
+ [
+  "JS-built cookie policy was rendered and read",
+  true,
+  "privacy, cookies(rendered), terms"
+ ],
+ [
+  "terms changed since you agreed: flagged",
+  true,
+  "high"
+ ],
+ [
+  "terms changed: says what moved, in plain words",
+  true,
+  "Before: they don't sell your data. Now: they may sell your data. | Before: they honor Global Privacy Control. Now: they don't honor Global Privacy Control."
+ ],
+ [
+  "receipts tab shows the change",
+  true,
+  ""
+ ],
+ [
+  "verdict is green",
+  true,
+  "Nothing here clashes with your priorities."
+ ],
+ [
+  "no say-vs-do gaps",
+  true,
+  ""
+ ],
+ [
+  "agree gate: safe site is never interrupted",
+  true,
+  ""
+ ],
+ [
+  "reject check: held",
+  true,
+  ""
+ ],
+ [
+  "compare: other site offered",
+  true,
+  ""
+ ],
+ [
+  "compare: trade-offs spelled out",
+  true,
+  ""
+ ]
+]
