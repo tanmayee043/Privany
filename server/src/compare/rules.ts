@@ -30,7 +30,7 @@ function base(claim: PolicyClaim, audit: BrowserAudit | undefined) {
     key: claim.key,
     title: CLAIMS[claim.key].title,
     claim,
-    observed: audit ? { baseline: audit.summary.baseline, gpc: audit.summary.gpc } : undefined,
+    observed: audit ? { baseline: audit.summary.baseline, gpc: audit.summary.gpc, rejectAll: audit.summary.reject_all, acceptAll: audit.summary.accept_all } : undefined,
   };
 }
 
@@ -99,14 +99,24 @@ function compareConsent(claim: PolicyClaim, audit: BrowserAudit | undefined): Co
   if (!audit || !b) return inconclusive(claim, audit, "The default visit didn't complete.");
   const tracking = b.stableCookies.filter(isTracking);
   const banner = audit.consentBanner.detected ? `A consent banner${audit.consentBanner.vendor ? ` (${audit.consentBanner.vendor})` : ""} was shown, and we didn't click anything.` : "We didn't detect a consent banner.";
+  const rejectRun = audit.runs.find((r) => r.config === "reject_all");
+  const rejected = audit.summary.reject_all;
+  const afterReject = rejected?.stableCookies.filter(isTracking) ?? [];
+  const rejectNote = !rejectRun
+    ? ""
+    : !rejected
+      ? " We didn't find a one-click Reject All button on the banner's first screen (refusing may take extra steps, or our button matching missed it), so what happens after refusing wasn't tested."
+      : afterReject.length
+        ? ` After clicking "${rejectRun.consent?.button}", ${plural(afterReject.length, "tracking cookie")} (${list(afterReject)}) were still written.`
+        : ` After clicking "${rejectRun.consent?.button}", no tracking cookies were written.`;
   const caveats = ["Consent rules differ by region: many US sites track by default and ask for consent only in Europe. This test ran from the server's location.", ...COMMON_CAVEATS];
   if (claim.value === "yes") {
     if (tracking.length > 0) {
-      return { ...base(claim, audit), verdict: "possible_gap", headline: `${plural(tracking.length, "tracking cookie")} before any consent`, explanation: `The policy says non-essential cookies wait for consent. ${banner} Every visit still wrote ${plural(tracking.length, "analytics or advertising cookie")}, from ${list(tracking)}.`, observed: { baseline: b, cookies: tracking }, caveats };
+      return { ...base(claim, audit), verdict: "possible_gap", headline: `${plural(tracking.length, "tracking cookie")} before any consent`, explanation: `The policy says non-essential cookies wait for consent. ${banner} Every visit still wrote ${plural(tracking.length, "analytics or advertising cookie")}, from ${list(tracking)}.${rejectNote}`, observed: { baseline: b, cookies: tracking }, caveats };
     }
-    return { ...base(claim, audit), verdict: "consistent", headline: "No tracking cookies before consent", explanation: `The policy says non-essential cookies wait for consent. ${banner} No analytics or advertising cookie was written on every visit.`, observed: { baseline: b, cookies: [] }, caveats };
+    return { ...base(claim, audit), verdict: "consistent", headline: "No tracking cookies before consent", explanation: `The policy says non-essential cookies wait for consent. ${banner} No analytics or advertising cookie was written on every visit.${rejectNote}`, observed: { baseline: b, cookies: [] }, caveats };
   }
-  return { ...base(claim, audit), verdict: "not_stated", headline: claim.value === "no" ? "The policy says tracking starts by default" : "The policy doesn't say tracking waits for consent", explanation: `${banner} Every visit wrote ${plural(tracking.length, "analytics or advertising cookie")} before any choice was made.`, observed: { baseline: b, cookies: tracking }, caveats };
+  return { ...base(claim, audit), verdict: "not_stated", headline: claim.value === "no" ? "The policy says tracking starts by default" : "The policy doesn't say tracking waits for consent", explanation: `${banner} Every visit wrote ${plural(tracking.length, "analytics or advertising cookie")} before any choice was made.${rejectNote}`, observed: { baseline: b, cookies: tracking }, caveats };
 }
 
 function compareSaleOrSharing(claim: PolicyClaim, audit: BrowserAudit | undefined): Comparison {
