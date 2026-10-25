@@ -105,7 +105,7 @@ function Row({ r, url }: { r: NoGoResult; url?: string }) {
               </div>
             )}
             {(r.basis === "seen" || r.basis === "both") && r.cookies && (
-              <p className="mt-2 text-[12px] text-ink-3">Our test loads the homepage and one other page and scrolls both, without logging in or clicking anything except the cookie banner test. A cookie alone doesn't prove what a company does with data.</p>
+              <p className="mt-2 text-[12px] text-ink-3">Our test loads the homepage and one other page and scrolls both, without logging in or clicking (clicks happen only in the separate click and cookie-banner tests). A cookie alone doesn't prove what a company does with data.</p>
             )}
           </div>
         </details>

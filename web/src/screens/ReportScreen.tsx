@@ -6,6 +6,7 @@ import { Evidence } from "../components/Evidence";
 import { NextSteps, PrioritiesForm } from "../components/Personal";
 import { NoGoSection } from "../components/NoGos";
 import { CookieTable, HowTested, Topics } from "../components/Details";
+import { ClickTestSection } from "../components/ClickTest";
 import { loadPriorities, rankComparisons, savePriorities, type Priorities } from "../priorities";
 import { siteName } from "../words";
 
@@ -61,7 +62,7 @@ export function ReportScreen({ id }: { id: string }) {
             <div className="lg:sticky lg:top-6">
               <FactsPanel report={report} ranked={ranked} selected={current?.key} onSelect={select} />
             </div>
-            <div className="grid min-w-0 gap-6">
+            <div className="grid min-w-0 grid-cols-1 gap-6">
               <div id="evidence" className="scroll-mt-4">
                 {current ? (
                   <Evidence key={current.key} c={current} report={report} />
@@ -72,7 +73,8 @@ export function ReportScreen({ id }: { id: string }) {
               {report.policy && <PrioritiesForm value={priorities} onChange={updatePriorities} />}
               {report.policy && <NextSteps report={report} priorities={priorities} />}
               <Topics report={report} priorities={priorities} />
-              <CookieTable report={report} />
+              <ClickTestSection report={report} />
+      <CookieTable report={report} />
               <HowTested report={report} />
             </div>
           </div>

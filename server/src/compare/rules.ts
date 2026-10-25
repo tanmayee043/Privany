@@ -10,7 +10,7 @@ import { isTracking } from "../audit/cookies.js";
 
 const COMMON_CAVEATS = [
   "Cookies are only one way to track. Fingerprinting and server-side sharing aren't measured; outside domains contacted are listed under How we tested.",
-  "We visited the homepage and one other page, scrolling through each, but didn't log in or click anything on the page (apart from the separate cookie-banner test). Clicking can load more ads and trackers, so real numbers may be higher.",
+  "We visited the homepage and one other page, scrolling through each, without logging in or clicking anything. Separate visits test the cookie banner and a visitor's first clicks; see \"What happened when we clicked\".",
 ];
 
 const GPC_CAVEATS = [

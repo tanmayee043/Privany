@@ -38,7 +38,7 @@ export function policyReader(): "claude" | "rules" {
 
 const LIMITATIONS = [
   "Privany compares what a policy says with what a browser can observe. It doesn't prove what a company does with data on its servers, and it isn't legal advice.",
-  "The browser test loads the homepage and one other page of the site and scrolls through both, from the server's location. It never logs in, and the only clicks are Reject All and Accept All on a cookie banner, in separate visits. Clicks elsewhere on some sites trigger pop-ups or downloads, so tracking that starts only after such a click isn't measured.",
+  "The browser test loads the homepage and one other page of the site and scrolls through both, from the server's location. It never logs in. The measured visits don't click anything; separate visits click Reject All / Accept All on a cookie banner, and click the page once or twice like a visitor (a Play button if there is one) to see what that sets off. Clicks deeper into the site, and pop-ups an ad network has already shown to this connection, aren't covered.",
   "Cookie purposes come from the Open Cookie Database; cookies it doesn't list are shown as unidentified rather than guessed.",
 ];
 

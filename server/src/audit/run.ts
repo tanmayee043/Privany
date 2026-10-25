@@ -2,7 +2,8 @@ import type { Page } from "puppeteer";
 import type { AuditConfigKey, AuditRun, BrowserAudit, ConfigSummary, CookieTotals } from "../report/types.js";
 import { isTransientNavError } from "../limits.js";
 import { safeFetchText } from "../safety/url.js";
-import { getBrowser, preparePage } from "./browser.js";
+import { blockDownloads, getBrowser, loadPage, preparePage, scrollThrough } from "./browser.js";
+import { runClickTest } from "./clicktest.js";
 import { clickConsent, type ConsentChoice } from "./consent.js";
 import { classifyCookie, registrableDomain, totals } from "./cookies.js";
 
@@ -115,7 +116,7 @@ async function runConfig(
   const started = Date.now();
   const hosts = new Set<string>();
   const siteDomain = registrableDomain(site.hostname);
-  // Only consent-banner buttons are ever clicked, but a page can still try to open
+  // These visits click nothing but consent-banner buttons, but a page can still try to open
   // windows on its own; close any it opens so they can't run further code.
   context.on("targetcreated", (t) => {
     if (t.type() === "page" && t.opener()) void t.page().then((p) => p?.close()).catch(() => {});
@@ -132,7 +133,7 @@ async function runConfig(
         Object.defineProperty(Navigator.prototype, "globalPrivacyControl", { get: () => true, configurable: true });
       });
     }
-    let partial = !(await load(page, site.toString()));
+    let partial = !(await loadPage(page, site.toString(), NAV_TIMEOUT_MS));
     await new Promise((r) => setTimeout(r, SETTLE_MS));
     let consent: AuditRun["consent"];
     if (cfg.consent) {
@@ -149,7 +150,7 @@ async function runConfig(
     const pagesVisited = [finalUrl];
     const inner = innerUrl ?? (await pickInnerPage(page, registrableDomain(new URL(finalUrl).hostname)).catch(() => undefined));
     if (inner) {
-      partial = !(await load(page, inner)) || partial;
+      partial = !(await loadPage(page, inner, NAV_TIMEOUT_MS)) || partial;
       await new Promise((r) => setTimeout(r, SETTLE_MS));
       await scrollThrough(page);
       pagesVisited.push(page.url());
@@ -171,42 +172,8 @@ async function runConfig(
   }
 }
 
-/** Loads a URL; false when it hit the timeout (what loaded so far still counts). */
-async function load(page: Page, url: string): Promise<boolean> {
-  try {
-    await page.goto(url, { waitUntil: "networkidle2", timeout: NAV_TIMEOUT_MS });
-    return true;
-  } catch (err) {
-    if (err instanceof Error && err.name === "TimeoutError") return false;
-    throw err;
-  }
-}
-
-async function blockDownloads(page: Page): Promise<void> {
-  try {
-    const cdp = await page.createCDPSession();
-    await cdp.send("Page.setDownloadBehavior", { behavior: "deny" });
-  } catch {
-    // Not supported by this Chrome; navigation is still limited to public web pages.
-  }
-}
-
-/** Scrolls to the bottom in steps, since many ads and trackers load only when scrolled into view. */
-async function scrollThrough(page: Page): Promise<void> {
-  await page
-    .evaluate(async () => {
-      for (let i = 0; i < 10; i++) {
-        window.scrollBy(0, Math.round(window.innerHeight * 0.9));
-        await new Promise((r) => setTimeout(r, 350));
-        if (window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 2) break;
-      }
-    })
-    .catch(() => {});
-  await new Promise((r) => setTimeout(r, 1_500));
-}
-
 /** Picks a content page on the same site: a same-domain link with real text, skipping account, legal and file links. */
-async function pickInnerPage(page: Page, siteDomain: string): Promise<string | undefined> {
+export async function pickInnerPage(page: Page, siteDomain: string): Promise<string | undefined> {
   return page.evaluate((domain) => {
     const skip = /privacy|terms|legal|cookie|login|log-in|signin|sign-in|signup|sign-up|register|account|logout|cart|checkout|subscribe|download|contact|careers|jobs|help|support|faq/i;
     const fileLink = /\.(pdf|zip|exe|dmg|apk|msi|rar|7z|jpe?g|png|gif|mp4|mp3|avi|mkv|torrent)$/i;
@@ -287,12 +254,16 @@ export async function runBrowserAudit(site: URL, hooks: AuditHooks = {}): Promis
     inner ??= results[0].inner;
   }
   if (!discovery) hooks.onDiscovery?.({ privacyPolicy: [], optOut: [] });
+  // The click test (does clicking Play set off pop-ups?) runs alongside the
+  // consent-banner visits; both happen after the measured default/GPC rounds.
+  hooks.onProgress?.(discovery?.banner.detected ? "Clicking the page like a visitor, and testing Reject All / Accept All" : "Clicking the page like a visitor");
+  const clickTask = runClickTest(site, inner);
   if (discovery?.banner.detected) {
     // Reject All and Accept All side by side, loading the same pages as the other visits.
-    hooks.onProgress?.("Clicking Reject All and Accept All on the consent banner");
     const consentResults = await Promise.all(CONSENT_CONFIGS.map((cfg) => runConfigWithRetry(site, cfg, 1, false, inner)));
     for (const result of consentResults) runs.push(result.run);
   }
+  const clickTest = await clickTask;
   const summary: BrowserAudit["summary"] = {};
   for (const cfg of [...CONFIGS, ...CONSENT_CONFIGS]) {
     // A consent visit where no button was found just looks like the baseline, so it isn't summarized.
@@ -308,6 +279,7 @@ export async function runBrowserAudit(site: URL, hooks: AuditHooks = {}): Promis
     consentBanner: discovery?.banner ?? { detected: false },
     homepageLinks: { privacyPolicy: discovery?.privacyPolicy ?? [], optOut: discovery?.optOut ?? [] },
     gpcJson: await gpcJson,
+    clickTest,
   };
 }
 

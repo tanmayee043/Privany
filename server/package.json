@@ -11,7 +11,8 @@
     "test": "vitest run",
     "audit": "tsx src/cli/audit.ts",
     "policy": "tsx src/cli/policy.ts",
-    "read": "tsx src/cli/read.ts"
+    "read": "tsx src/cli/read.ts",
+    "click": "tsx src/cli/click.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.3.0",

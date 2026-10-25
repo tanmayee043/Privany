@@ -16,6 +16,8 @@ export function FactsPanel({ report, ranked, selected, onSelect }: { report: Rep
   // Every default visit is made without touching any banner, so these cookies came before any agreement.
   const beforeConsent = s?.baseline ? s.baseline.stable.advertising + s.baseline.stable.analytics : 0;
   const outsideDomains = s?.baseline?.stableHosts?.length;
+  const click = report.audit?.clickTest;
+  const clickPopups = click?.ok ? click.popups : [];
 
   return (
     <section aria-labelledby="panel-title" className="border-2 border-ink bg-paper px-5 pb-4 pt-3.5 sm:px-6">
@@ -30,6 +32,16 @@ export function FactsPanel({ report, ranked, selected, onSelect }: { report: Rep
           {beforeConsent} tracking cookie{beforeConsent === 1 ? " was" : "s were"} set before you agreed to anything.
           <span className="mt-0.5 block text-[13px] font-normal text-ink-2">Seen on every default visit, without clicking any banner.</span>
         </p>
+      )}
+      {click?.ok && (clickPopups.length > 0 || click.redirectedTo) && (
+        <a href="#click-test" className="mb-2 block bg-ground px-3 py-2.5 text-[15px] font-bold leading-snug text-ink no-underline hover:bg-ground-2">
+          {clickWhat(click)} {clickPopups.length > 0 ? `opened ${clickPopups.length} pop-up window${clickPopups.length === 1 ? "" : "s"}` : ""}
+          {clickPopups.length > 0 && click.redirectedTo ? " and " : ""}
+          {click.redirectedTo ? `sent the page to ${new URL(click.redirectedTo).hostname}` : ""}.
+          <span className="mt-0.5 block text-[13px] font-normal text-ink-2">
+            {clickPopups.length > 0 && `To ${[...new Set(clickPopups.map((p) => p.host))].slice(0, 3).join(", ")}. `}Our test browser blocked them before they loaded.
+          </span>
+        </a>
       )}
 
       <div className="rule-bar flex items-baseline justify-between pt-1.5">
@@ -84,10 +96,18 @@ export function FactsPanel({ report, ranked, selected, onSelect }: { report: Rep
 
       <p className="rule-div mt-0.5 pt-2 text-[12px] leading-snug text-ink-2">
         {policy && `${policy.evidence.verified} of ${policy.evidence.proposed} quotes found word for word in the policy; the rest were discarded. `}
-        {(report.audit?.runs[0]?.pagesVisited?.length ?? 1) > 1 ? "Homepage and one inner page, scrolled, no clicks on the page." : "Homepage only, no clicks."} A possible gap is a reason to look closer, not proof of wrongdoing.
+        {(report.audit?.runs[0]?.pagesVisited?.length ?? 1) > 1 ? "Homepage and one inner page, scrolled; clicks only in the separate click and banner tests." : "Homepage only, no clicks."} A possible gap is a reason to look closer, not proof of wrongdoing.
       </p>
     </section>
   );
+}
+
+/** "Clicking “Play”" / "Clicking the video player" / "Clicking the page", for sentences about the click test. */
+export function clickWhat(click: NonNullable<NonNullable<Report["audit"]>["clickTest"]>): string {
+  const t = click.target;
+  if (!t || t.kind === "page_center") return "Clicking the page";
+  if (t.kind === "video_player") return "Clicking the video player";
+  return `Clicking “${t.label ?? "Play"}”`;
 }
 
 function Row({ label, value, indent }: { label: string; value?: number; indent?: boolean }) {

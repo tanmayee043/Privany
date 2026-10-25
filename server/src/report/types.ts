@@ -148,6 +148,32 @@ export interface BrowserAudit {
   consentBanner: { detected: boolean; vendor?: string };
   homepageLinks: { privacyPolicy: string[]; optOut: { text: string; href: string }[] };
   gpcJson: { found: boolean; gpc?: boolean; lastUpdate?: string; error?: string };
+  /** What happened when the test browser clicked the page like a visitor would (e.g. a Play button). */
+  clickTest?: ClickTest;
+}
+
+export interface ClickPopup {
+  /** Where the pop-up window tried to go; it was blocked before loading. */
+  url: string;
+  host: string;
+  afterClick: number;
+}
+
+export interface ClickTest {
+  ok: boolean;
+  error?: string;
+  /** The page that was clicked (a content page with a player when one was found). */
+  pageUrl?: string;
+  target?: { kind: "play_button" | "video_player" | "page_center"; label?: string };
+  clicks: number;
+  popups: ClickPopup[];
+  /** Set when a click sent the page itself to a different site. */
+  redirectedTo?: string;
+  /** Outside domains first contacted after the clicks. */
+  newHosts: string[];
+  /** Advertising/analytics cookies first written after the clicks. */
+  newTrackingCookies: ObservedCookie[];
+  durationMs: number;
 }
 
 export type Verdict = "consistent" | "possible_gap" | "not_stated" | "not_testable" | "inconclusive";

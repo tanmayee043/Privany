@@ -9,6 +9,7 @@ import { Evidence } from "../../web/src/components/Evidence";
 import { NextSteps, PrioritiesForm } from "../../web/src/components/Personal";
 import { NoGoSection, NoGoSetup, useNoGos } from "../../web/src/components/NoGos";
 import { CookieTable, HowTested, Topics } from "../../web/src/components/Details";
+import { ClickTestSection } from "../../web/src/components/ClickTest";
 import { loadPriorities, rankComparisons, savePriorities, type Priorities } from "../../web/src/priorities";
 import { siteName } from "../../web/src/words";
 import type { TabState } from "./shared";
@@ -93,7 +94,7 @@ function Panel() {
       </header>
       <main className="flex-1 p-3">
         {state === undefined ? null : state === null ? (
-          <div className="grid gap-3">
+          <div className="grid grid-cols-1 gap-3">
             <FirstUseNoGos />
             <Idle />
           </div>
@@ -104,7 +105,7 @@ function Panel() {
         ) : report ? (
           <ReportView report={report} />
         ) : (
-          <div className="grid gap-3">
+          <div className="grid grid-cols-1 gap-3">
             <FirstUseNoGos />
             <Progress job={job} reading={state.phase === "reading"} site={site} />
           </div>
@@ -216,6 +217,7 @@ function ReportView({ report }: { report: Report }) {
       )}
       {report.policy && <NextSteps report={report} priorities={priorities} />}
       <Topics report={report} priorities={priorities} />
+      <ClickTestSection report={report} />
       <CookieTable report={report} />
       <HowTested report={report} />
     </div>

@@ -57,3 +57,37 @@ export async function preparePage(page: Page, onRequestHost?: (host: string) => 
     );
   });
 }
+
+/** Loads a URL; false when it hit the timeout (what loaded so far still counts). */
+export async function loadPage(page: Page, url: string, timeoutMs: number): Promise<boolean> {
+  try {
+    await page.goto(url, { waitUntil: "networkidle2", timeout: timeoutMs });
+    return true;
+  } catch (err) {
+    if (err instanceof Error && err.name === "TimeoutError") return false;
+    throw err;
+  }
+}
+
+export async function blockDownloads(page: Page): Promise<void> {
+  try {
+    const cdp = await page.createCDPSession();
+    await cdp.send("Page.setDownloadBehavior", { behavior: "deny" });
+  } catch {
+    // Not supported by this Chrome; navigation is still limited to public web pages.
+  }
+}
+
+/** Scrolls to the bottom in steps, since many ads and trackers load only when scrolled into view. */
+export async function scrollThrough(page: Page): Promise<void> {
+  await page
+    .evaluate(async () => {
+      for (let i = 0; i < 10; i++) {
+        window.scrollBy(0, Math.round(window.innerHeight * 0.9));
+        await new Promise((r) => setTimeout(r, 350));
+        if (window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 2) break;
+      }
+    })
+    .catch(() => {});
+  await new Promise((r) => setTimeout(r, 1_500));
+}

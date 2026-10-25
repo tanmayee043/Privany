@@ -33,7 +33,7 @@ Other tools summarize policies. Privany also tests behavior, using the dual-lens
 - Verdicts per promise: possible gap, consistent, not stated, not testable, inconclusive. Never "violation" or legal conclusions.
 - Every policy quote shown has been verified word for word against the policy text; unsupported model answers are downgraded.
 - Cookie purposes come from the Open Cookie Database; unknown cookies stay "unidentified".
-- Observation scope: homepage plus one inner page, scrolled; no login, no clicks (clicks can trigger pop-ups/downloads); downloads and pop-ups blocked; server location; cookies plus outside domains contacted (no fingerprinting/server-side).
+- Observation scope: homepage plus one inner page, scrolled; no login; measured visits never click, while separate visits click the cookie banner (Reject All / Accept All) and a Play button or the page (click test); pop-ups are recorded and blocked before loading, downloads blocked; server location; cookies plus outside domains contacted (no fingerprinting/server-side).
 - No numeric privacy score.
 - Personal priorities are stored locally in the browser.
 - Must run at no cost: the default policy reader is rule-based and offline; paid AI is opt-in only.

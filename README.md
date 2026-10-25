@@ -12,8 +12,8 @@ The measurement method comes from **PrivAudit** (ACM CCS 2026, [arXiv 2609.09697
 
 Hackathon project, work in progress.
 
-- Working: Chrome extension with side panel, browser audit (default vs. GPC, repeated visits), reading the policy straight from the open tab (or following its privacy link), free rule-based policy reader, quote verification, comparison rules, web app.
-- Ideas for later: "Reject All" consent test, opt-out request drafting, a map of the companies that learned about your visit, a local AI model through Ollama.
+- Working: Chrome extension with side panel, browser audit (default vs. GPC, repeated visits, homepage plus one inner page, scrolled), Reject All / Accept All consent test, a click test that clicks Play (or the page) like a visitor and records pop-ups and redirects, personal no-goes, reading the policy straight from the open tab (or following its privacy link), free rule-based policy reader, quote verification, comparison rules, web app.
+- Ideas for later: opt-out request drafting, a map of the companies that learned about your visit, a local AI model through Ollama.
 
 ## Run it locally
 
@@ -77,6 +77,7 @@ Optional; copy `.env.example` to `.env`:
 | `npm test` | Unit tests (rule reader, quote verification, comparison rules, cookie labels, URL safety) |
 | `npm run typecheck` | Type-checks server, web app and extension |
 | `npm run audit -w server -- example.com` | Runs only the browser audit and prints the cookies |
+| `npm run click -w server -- example.com [page-url]` | Runs only the click test (does clicking Play open pop-ups?) and prints what happened |
 | `npm run read -w server -- https://example.com/privacy` | Runs the free reader on a policy and prints its findings |
 | `npm run e2e -w extension -- https://duckduckgo.com/privacy out.png` | Loads the built extension in a test Chrome, clicks its icon on the page and saves a screenshot of the panel (needs the server running) |
 
