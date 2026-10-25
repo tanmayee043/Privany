@@ -1,10 +1,12 @@
-import { randomUUID } from "node:crypto";
-import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
+import { mkdir, readFile, readdir, stat, unlink, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import type { BrowserAudit, JobStatus, PolicyAnalysis, Report, StepKey, StepState } from "./report/types.js";
 import { runBrowserAudit } from "./audit/run.js";
 import { compare } from "./compare/rules.js";
+import { JobTimeoutError, QueueFullError, withTimeout } from "./limits.js";
 import { analyzePolicy, hasApiKey, PolicyAnalysisError } from "./policy/analyze.js";
 import { fetchPolicy, looksLikePolicy, PolicyFetchError, policyFromText, tryPolicyFromBlocks, type ExtractedPolicy, type RawBlock } from "./policy/extract.js";
 import { readPolicyWithRules } from "./policy/rules.js";
@@ -43,27 +45,85 @@ const LIMITATIONS = [
 const jobs = new Map<string, JobStatus>();
 let queue: Promise<unknown> = Promise.resolve();
 
+// Limits are env-tunable so a shared deployment can be stricter than a laptop.
+const MAX_PENDING_JOBS = Math.max(1, Number(process.env.PRIVANY_MAX_QUEUE ?? 5));
+const JOB_TIMEOUT_MS = Math.max(30_000, Number(process.env.PRIVANY_JOB_TIMEOUT_MS ?? 5 * 60_000));
+const JOB_KEEP_MS = 60 * 60_000;
+const CACHE_TTL_MS = Math.max(0, Number(process.env.PRIVANY_CACHE_TTL_MS ?? 60 * 60_000));
+const MAX_REPORTS = Math.max(10, Number(process.env.PRIVANY_MAX_REPORTS ?? 200));
+const MAX_REPORT_AGE_MS = 30 * 24 * 60 * 60_000;
+
+/** Recent reports by input fingerprint, so repeating a check doesn't repeat four browser visits. */
+const recent = new Map<string, { reportId: string; at: number }>();
+
 export function getJob(id: string): JobStatus | undefined {
   return jobs.get(id);
 }
 
-/** Validates input synchronously enough to reject bad URLs before queueing. */
-export function startJob(input: AnalyzeInput): JobStatus {
+function pendingJobs(): number {
+  let n = 0;
+  for (const j of jobs.values()) if (j.state === "queued" || j.state === "running") n++;
+  return n;
+}
+
+function fingerprint(site: URL, input: AnalyzeInput): string {
+  const text = input.policyText ?? "";
+  const page = input.page ? `${input.page.url}|${input.page.blocks.length}` : "";
+  return createHash("sha256").update([site.origin, input.policyUrl ?? "", page, text].join("\n")).digest("hex");
+}
+
+function stepsFor(state: "pending" | "done" | "skipped"): JobStatus["steps"] {
+  return (Object.keys(STEP_LABELS) as StepKey[]).map((key) => ({ key, label: STEP_LABELS[key], state }));
+}
+
+/**
+ * Validates input synchronously enough to reject bad URLs before queueing.
+ * Throws QueueFullError when too many checks are already waiting. `fresh`
+ * skips the recent-report cache.
+ */
+export function startJob(input: AnalyzeInput, opts: { fresh?: boolean } = {}): JobStatus {
   const site = normalizeUrl(input.url);
   if (input.policyUrl) normalizeUrl(input.policyUrl);
   if (input.policyText && input.policyText.length > 400_000) throw new UnsafeUrlError("The pasted policy is too long (400,000 characters max).");
   if (input.page) normalizeUrl(input.page.url);
+
+  const key = fingerprint(site, input);
+  const hit = recent.get(key);
+  if (!opts.fresh && hit && Date.now() - hit.at < CACHE_TTL_MS && existsSync(path.join(REPORTS_DIR, `${hit.reportId}.json`))) {
+    const cached: JobStatus = { id: randomUUID(), state: "done", steps: stepsFor("done"), reportId: hit.reportId, cached: true };
+    jobs.set(cached.id, cached);
+    expireJob(cached.id);
+    return cached;
+  }
+
+  if (pendingJobs() >= MAX_PENDING_JOBS) throw new QueueFullError(60);
   const id = randomUUID();
-  const job: JobStatus = {
-    id,
-    state: "queued",
-    steps: (Object.keys(STEP_LABELS) as StepKey[]).map((key) => ({ key, label: STEP_LABELS[key], state: "pending" })),
-  };
+  const job: JobStatus = { id, state: "queued", steps: stepsFor("pending") };
   jobs.set(id, job);
   // One analysis at a time: parallel audits would compete for bandwidth and
-  // make cookie counts less comparable.
-  queue = queue.then(() => runJob(job, site, input)).catch(() => {});
+  // make cookie counts less comparable. A job that outruns its time limit is
+  // failed so it can't hold up everything queued behind it.
+  queue = queue
+    .then(() => withTimeout(runJob(job, site, input), JOB_TIMEOUT_MS, "This check took too long and was stopped. The site may be slow or blocking automated visits."))
+    .then(() => {
+      if (job.state === "done" && job.reportId) recent.set(key, { reportId: job.reportId, at: Date.now() });
+    })
+    .catch((err) => {
+      if (err instanceof JobTimeoutError) failJob(job, err.message);
+    })
+    .finally(() => expireJob(id));
   return job;
+}
+
+function failJob(job: JobStatus, message: string) {
+  job.state = "failed";
+  job.error = message;
+  for (const s of job.steps) if (s.state === "running" || s.state === "pending") s.state = s.state === "running" ? "failed" : "skipped";
+}
+
+/** Drops a finished job from memory after a while; reports stay on disk. */
+function expireJob(id: string) {
+  setTimeout(() => jobs.delete(id), JOB_KEEP_MS).unref();
 }
 
 function setStep(job: JobStatus, key: StepKey, state: StepState, detail?: string) {
@@ -179,6 +239,7 @@ async function runJob(job: JobStatus, site: URL, input: AnalyzeInput): Promise<v
     report.comparisons = compare(policy, audit);
     setStep(job, "compare", policy ? "done" : "skipped");
 
+    if ((job.state as JobStatus["state"]) === "failed") return; // timed out while we were working
     await saveReport(report);
     job.reportId = report.id;
     job.state = "done";
@@ -219,6 +280,18 @@ async function findPolicy(site: URL, candidates: string[], onProgress: (d: strin
 async function saveReport(report: Report): Promise<void> {
   await mkdir(REPORTS_DIR, { recursive: true });
   await writeFile(path.join(REPORTS_DIR, `${report.id}.json`), JSON.stringify(report));
+  void pruneReports().catch(() => {});
+}
+
+/** Deletes reports past the age limit, then the oldest beyond MAX_REPORTS. Bundled sample reports are kept. */
+export async function pruneReports(now = Date.now()): Promise<number> {
+  const names = (await readdir(REPORTS_DIR).catch(() => [])).filter((f) => f.endsWith(".json") && !f.startsWith("sample-"));
+  const files = (
+    await Promise.all(names.map(async (name) => ({ name, mtime: (await stat(path.join(REPORTS_DIR, name)).catch(() => null))?.mtimeMs ?? 0 })))
+  ).sort((a, b) => b.mtime - a.mtime);
+  const doomed = files.filter((f, i) => i >= MAX_REPORTS || now - f.mtime > MAX_REPORT_AGE_MS);
+  await Promise.all(doomed.map((f) => unlink(path.join(REPORTS_DIR, f.name)).catch(() => {})));
+  return doomed.length;
 }
 
 const ID_RE = /^[0-9a-f-]{36}$|^sample-[a-z0-9-]+$/;
@@ -233,11 +306,17 @@ export async function loadReport(id: string): Promise<Report | undefined> {
 }
 
 export async function listReports(): Promise<{ id: string; site: string; createdAt: string; gaps: number }[]> {
-  const files = (await readdir(REPORTS_DIR).catch(() => [])).filter((f) => f.endsWith(".json"));
+  const names = (await readdir(REPORTS_DIR).catch(() => [])).filter((f) => f.endsWith(".json"));
+  // Newest files first by mtime, so we parse 50 reports instead of all of them.
+  const newest = (
+    await Promise.all(names.map(async (name) => ({ name, mtime: (await stat(path.join(REPORTS_DIR, name)).catch(() => null))?.mtimeMs ?? 0 })))
+  )
+    .sort((a, b) => b.mtime - a.mtime)
+    .slice(0, 50);
   const out = [];
-  for (const f of files) {
-    const r = await loadReport(f.slice(0, -5));
+  for (const f of newest) {
+    const r = await loadReport(f.name.slice(0, -5));
     if (r) out.push({ id: r.id, site: r.site, createdAt: r.createdAt, gaps: r.comparisons.filter((c) => c.verdict === "possible_gap").length });
   }
-  return out.sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 50);
+  return out.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }

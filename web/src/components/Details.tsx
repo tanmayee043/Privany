@@ -52,7 +52,7 @@ export function CookieTable({ report }: { report: Report }) {
     if (!audit) return [];
     const map = new Map<string, { name: string; domain: string; owner: string; category: CookieCategory; thirdParty: boolean; baseline: number; gpc: number; consent?: string }>();
     for (const run of audit.runs) {
-      if (!run.ok) continue;
+      if (!run.ok || (run.config !== "baseline" && run.config !== "gpc")) continue;
       for (const c of run.cookies) {
         const key = `${c.name}@${c.domain}`;
         const row = map.get(key) ?? { name: c.name, domain: c.domain, owner: c.platform ?? c.domain, category: c.category, thirdParty: c.thirdParty, baseline: 0, gpc: 0 };

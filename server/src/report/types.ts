@@ -95,10 +95,12 @@ export interface ObservedCookie {
   consentValue?: string;
 }
 
-export type AuditConfigKey = "baseline" | "gpc";
+export type AuditConfigKey = "baseline" | "gpc" | "accept_all" | "reject_all";
 
 export interface AuditRun {
   config: AuditConfigKey;
+  /** For the Accept All / Reject All visits: whether a button was found and pressed, and its label. */
+  consent?: { clicked: boolean; button?: string };
   repeat: number;
   label: string;
   ok: boolean;
@@ -155,6 +157,8 @@ export interface Comparison {
   observed?: {
     baseline?: ConfigSummary;
     gpc?: ConfigSummary;
+    rejectAll?: ConfigSummary;
+    acceptAll?: ConfigSummary;
     /** The cookies this verdict rests on. */
     cookies?: ObservedCookie[];
   };
@@ -186,4 +190,6 @@ export interface JobStatus {
   steps: { key: StepKey; label: string; state: StepState; detail?: string }[];
   reportId?: string;
   error?: string;
+  /** True when an earlier report for the same inputs was reused instead of re-running the audit. */
+  cached?: boolean;
 }

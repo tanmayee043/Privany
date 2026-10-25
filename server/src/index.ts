@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
-import express from "express";
+import express, { type NextFunction, type Request, type Response } from "express";
 import { closeBrowser } from "./audit/browser.js";
+import { QueueFullError, rateLimit } from "./limits.js";
 import { getJob, listReports, loadReport, policyReader, startJob, type AnalyzeInput } from "./pipeline.js";
 import type { RawBlock } from "./policy/extract.js";
 import { UnsafeUrlError } from "./safety/url.js";
@@ -20,8 +21,9 @@ app.get("/api/health", (_req, res) => {
   res.json({ ok: true, policyReader: policyReader() });
 });
 
-app.post("/api/analyze", (req, res) => {
-  const { url, policyUrl, policyText, page } = (req.body ?? {}) as Record<string, unknown>;
+// Starting a check is expensive (four browser visits); reads are cheap.
+app.post("/api/analyze", rateLimit({ windowMs: 60_000, max: 10 }), (req, res) => {
+  const { url, policyUrl, policyText, page, fresh } = (req.body ?? {}) as Record<string, unknown>;
   if (typeof url !== "string") {
     res.status(400).json({ error: "Enter a website address." });
     return;
@@ -37,9 +39,14 @@ app.post("/api/analyze", (req, res) => {
       policyUrl: typeof policyUrl === "string" && policyUrl.trim() ? policyUrl : undefined,
       policyText: typeof policyText === "string" && policyText.trim() ? policyText : undefined,
       page: parsedPage,
-    });
+    }, { fresh: fresh === true });
     res.status(202).json(job);
   } catch (err) {
+    if (err instanceof QueueFullError) {
+      res.setHeader("Retry-After", String(err.retryAfterSeconds));
+      res.status(503).json({ error: err.message });
+      return;
+    }
     if (err instanceof UnsafeUrlError) {
       res.status(400).json({ error: err.message });
       return;
@@ -48,8 +55,8 @@ app.post("/api/analyze", (req, res) => {
   }
 });
 
-app.get("/api/jobs/:id", (req, res) => {
-  const job = getJob(req.params.id);
+app.get("/api/jobs/:id", rateLimit({ windowMs: 60_000, max: 600 }), (req, res) => {
+  const job = getJob(String(req.params.id));
   if (!job) {
     res.status(404).json({ error: "That check isn't running any more. Start a new one." });
     return;
@@ -88,6 +95,17 @@ function parsePage(value: unknown): AnalyzeInput["page"] | null {
   const links = Array.isArray(p.policyLinks) ? p.policyLinks.filter((l): l is string => typeof l === "string").slice(0, 10) : [];
   return { url: p.url, title: typeof p.title === "string" ? p.title.slice(0, 300) : undefined, blocks, policyLinks: links };
 }
+
+// Malformed JSON, oversized bodies and unexpected throws get a JSON answer, not an HTML stack trace.
+app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+  const status = typeof err === "object" && err && "status" in err && typeof err.status === "number" ? err.status : 500;
+  if (status >= 500) console.error(err);
+  const message = status === 413 ? "That request was too large." : status < 500 ? "The request couldn't be read." : "Something went wrong on our side.";
+  res.status(status).json({ error: message });
+});
+
+// A stray rejection in one job shouldn't take the whole server (and every queued check) down.
+process.on("unhandledRejection", (reason) => console.error("Unhandled rejection:", reason));
 
 const port = Number(process.env.PORT ?? 8787);
 const server = app.listen(port, "127.0.0.1", () => {

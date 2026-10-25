@@ -1,7 +1,9 @@
 import type { Page } from "puppeteer";
 import type { AuditConfigKey, AuditRun, BrowserAudit, ConfigSummary, CookieTotals } from "../report/types.js";
+import { isTransientNavError } from "../limits.js";
 import { safeFetchText } from "../safety/url.js";
 import { getBrowser, preparePage } from "./browser.js";
+import { clickConsent, type ConsentChoice } from "./consent.js";
 import { classifyCookie, registrableDomain, totals } from "./cookies.js";
 
 // The measurement follows PrivAudit's crawler (crawler/scripts/cookie_profile_test.js):
@@ -16,6 +18,12 @@ const CONFIGS: { key: AuditConfigKey; label: string; gpc: boolean }[] = [
   { key: "baseline", label: "Default browser, no privacy signal", gpc: false },
   { key: "gpc", label: "Global Privacy Control on", gpc: true },
 ];
+// Run once each, and only on sites where a consent banner was detected.
+const CONSENT_CONFIGS: { key: AuditConfigKey; label: string; gpc: false; consent: ConsentChoice }[] = [
+  { key: "reject_all", label: "Clicked Reject All on the consent banner", gpc: false, consent: "reject" },
+  { key: "accept_all", label: "Clicked Accept All on the consent banner", gpc: false, consent: "accept" },
+];
+type Config = { key: AuditConfigKey; label: string; gpc: boolean; consent?: ConsentChoice };
 
 const NAV_TIMEOUT_MS = 45_000;
 const SETTLE_MS = 3_000;
@@ -86,7 +94,15 @@ async function discoverOnPage(page: Page): Promise<Discovery> {
   });
 }
 
-async function runConfig(site: URL, cfg: (typeof CONFIGS)[number], repeat: number, wantDiscovery: boolean): Promise<{ run: AuditRun; discovery?: Discovery }> {
+/** One visit, retried once when it fails for a reason that looks like a network blip. */
+async function runConfigWithRetry(site: URL, cfg: Config, repeat: number, wantDiscovery: boolean) {
+  const first = await runConfig(site, cfg, repeat, wantDiscovery);
+  if (first.run.ok || !first.run.error || !isTransientNavError(first.run.error)) return first;
+  await new Promise((r) => setTimeout(r, 2_000));
+  return runConfig(site, cfg, repeat, wantDiscovery);
+}
+
+async function runConfig(site: URL, cfg: Config, repeat: number, wantDiscovery: boolean): Promise<{ run: AuditRun; discovery?: Discovery }> {
   const browser = await getBrowser();
   const context = await browser.createBrowserContext();
   const started = Date.now();
@@ -111,12 +127,18 @@ async function runConfig(site: URL, cfg: (typeof CONFIGS)[number], repeat: numbe
       partial = true;
     }
     await new Promise((r) => setTimeout(r, SETTLE_MS));
+    let consent: AuditRun["consent"];
+    if (cfg.consent) {
+      consent = await clickConsent(page, cfg.consent);
+      // Cookies written in response to the choice need time to land.
+      if (consent.clicked) await new Promise((r) => setTimeout(r, SETTLE_MS));
+    }
     const finalUrl = page.url();
     const raw = await context.cookies();
     const cookies = raw.map((c) => classifyCookie({ name: c.name, value: c.value, domain: c.domain, expires: c.expires, session: c.session }, new URL(finalUrl).hostname));
     const discovery = wantDiscovery ? await discoverOnPage(page).catch(() => undefined) : undefined;
     return {
-      run: { config: cfg.key, repeat, label: cfg.label, ok: true, finalUrl, partial, durationMs: Date.now() - started, cookies, thirdPartyHosts: [...hosts].sort() },
+      run: { config: cfg.key, repeat, label: cfg.label, consent, ok: true, finalUrl, partial, durationMs: Date.now() - started, cookies, thirdPartyHosts: [...hosts].sort() },
       discovery,
     };
   } catch (err) {
@@ -167,7 +189,7 @@ export async function runBrowserAudit(site: URL, hooks: AuditHooks = {}): Promis
   for (let repeat = 1; repeat <= REPEATS; repeat++) {
     for (const cfg of CONFIGS) {
       hooks.onProgress?.(`${cfg.label} (visit ${repeat} of ${REPEATS})`);
-      const result = await runConfig(site, cfg, repeat, cfg.key === "baseline" && !discovery);
+      const result = await runConfigWithRetry(site, cfg, repeat, cfg.key === "baseline" && !discovery);
       runs.push(result.run);
       if (result.discovery && !discovery) {
         discovery = result.discovery;
@@ -176,9 +198,16 @@ export async function runBrowserAudit(site: URL, hooks: AuditHooks = {}): Promis
     }
   }
   if (!discovery) hooks.onDiscovery?.({ privacyPolicy: [], optOut: [] });
+  if (discovery?.banner.detected) {
+    for (const cfg of CONSENT_CONFIGS) {
+      hooks.onProgress?.(cfg.label);
+      runs.push((await runConfigWithRetry(site, cfg, 1, false)).run);
+    }
+  }
   const summary: BrowserAudit["summary"] = {};
-  for (const cfg of CONFIGS) {
-    const s = summarize(cfg.key, cfg.label, runs.filter((r) => r.config === cfg.key));
+  for (const cfg of [...CONFIGS, ...CONSENT_CONFIGS]) {
+    // A consent visit where no button was found just looks like the baseline, so it isn't summarized.
+    const s = summarize(cfg.key, cfg.label, runs.filter((r) => r.config === cfg.key && (!r.consent || r.consent.clicked)));
     if (s) summary[cfg.key] = s;
   }
   return {
